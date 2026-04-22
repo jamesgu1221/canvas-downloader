@@ -1,0 +1,10 @@
+.env
+sync_state.json
+sync_state.lock
+sync_state.tmp
+courses.json
+canvas_dl.log
+canvas_gui.log
+__pycache__/
+*.pyc
+.venv/
