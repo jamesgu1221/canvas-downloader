@@ -2,6 +2,8 @@
 
 自动将 Canvas 平台上各课程的文件下载到本地，保持文件夹层级结构，支持增量同步。
 
+> **平台要求**：Python 3.10+。CLI 跨平台可用；GUI 的"定时任务"功能走 Windows Task Scheduler + PowerShell，仅 Windows 可用。
+
 ## 安装
 
 ```bash
@@ -21,7 +23,7 @@ pip install -r requirements.txt
 ```
 CANVAS_API_TOKEN=粘贴你的token
 CANVAS_URL=https://oc.sjtu.edu.cn
-CANVAS_DOWNLOAD_DIR=D:\OneDrive\Desktop\课程材料
+CANVAS_DOWNLOAD_DIR=D:\Courses
 ```
 
 ## 使用
@@ -42,7 +44,7 @@ python -m canvas_dl --only-course 87629 12345
 python -m canvas_dl --skip-course 87629
 
 # 临时覆盖 .env 中的配置（不修改文件）
-python -m canvas_dl --token YOUR_TOKEN --url https://oc.sjtu.edu.cn --dir D:\path\to\dir
+python -m canvas_dl --token YOUR_TOKEN --url https://oc.sjtu.edu.cn --dir D:\Courses
 ```
 
 ### 图形界面
@@ -59,7 +61,7 @@ python -m canvas_dl --token YOUR_TOKEN --url https://oc.sjtu.edu.cn --dir D:\pat
 下载后的文件按以下结构保存：
 
 ```
-课程材料/
+D:\Courses\
 ├── 课程名A/
 │   ├── 文件夹1/
 │   │   └── 课件.pdf
