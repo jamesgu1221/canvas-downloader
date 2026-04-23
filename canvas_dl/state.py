@@ -5,6 +5,10 @@ import time
 from pathlib import Path
 
 
+class LockHeldError(RuntimeError):
+    """锁已被其他 canvas_dl 进程持有，用于让上层做"跳过本次运行"的决策。"""
+
+
 class SyncState:
     def __init__(self, state_file: Path):
         self._path = state_file
@@ -12,22 +16,25 @@ class SyncState:
         self._lock_path = state_file.with_suffix(".lock")
         self._lock_fh = None
 
-    # ── #11: process-level file lock ──────────────────────────────────────
-    def _acquire_lock(self) -> None:
+    # ── #11 / #32: process-level file lock ───────────────────────────────
+    # #32: 不再基于 mtime 的 60s 启发式抢锁——真实下载常超过 60s，抢锁会
+    # 导致两进程并发写 sync_state.json，正是 #11 要防止的场景。改为：
+    # 检测到锁被占用，直接抛 LockHeldError 让调用方决定（CLI 入口会退出，
+    # 等于"当前有任务在运行时禁止定时任务运行"）。
+    def _acquire_lock(self, wait_seconds: float = 2.0) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        for _ in range(300):  # wait up to 30 s
+        deadline = time.time() + wait_seconds
+        while True:
             try:
                 self._lock_fh = open(self._lock_path, "x")  # O_CREAT|O_EXCL, atomic
                 return
             except FileExistsError:
-                try:
-                    if time.time() - self._lock_path.stat().st_mtime > 60:
-                        self._lock_path.unlink(missing_ok=True)
-                        continue
-                except OSError:
-                    pass
+                if time.time() >= deadline:
+                    raise LockHeldError(
+                        f"另一 canvas_dl 进程正在运行（锁文件：{self._lock_path}）。"
+                        f"如果确认无活动进程，可手动删除该文件后重试。"
+                    )
                 time.sleep(0.1)
-        # Timeout: proceed without lock rather than deadlock forever
 
     def _release_lock(self) -> None:
         if self._lock_fh is not None:

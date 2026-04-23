@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 from .config import load_config
 from .client import CanvasClient, safe_course_name
-from .state import SyncState
+from .state import SyncState, LockHeldError
 from .traversal import get_course_root_folder, walk_folder, sanitize_name
 from .progress import make_course_bar, make_file_bar, report_empty_course
 from . import courses_config as cc
@@ -170,6 +170,15 @@ def _migrate_legacy_state(legacy_dir: Path, new_path: Path) -> None:
     （假定新位置更权威，因为本次启动会从新位置读写）。遗留的 .lock 文件
     一律清理，避免下次在目录里残留。
     """
+    # #31: 若下载目录与状态文件所在目录是同一个（如用户把下载目录设成项目根），
+    # legacy_state 与 new_path 会指向同一个文件，误入下方 unlink 分支会把
+    # 活跃状态文件删掉，导致下一次全量重下。
+    try:
+        if legacy_dir.resolve() == new_path.parent.resolve():
+            return
+    except OSError:
+        return
+
     legacy_state = legacy_dir / "sync_state.json"
     legacy_lock = legacy_dir / "sync_state.lock"
     legacy_tmp = legacy_dir / "sync_state.tmp"
@@ -205,7 +214,13 @@ def main():
     # 释放 .lock 文件，避免锁泄漏。state.save() 已经会释放锁，所以重复
     # 调用 state.close() 是幂等无害的。
     try:
-        state.load()
+        try:
+            state.load()
+        except LockHeldError as e:
+            # #32: 已有另一个 canvas_dl 在运行，定时任务本次直接跳过，不抢锁、
+            # 不并发写 sync_state.json。退出码 0 让 Task Scheduler 不报失败。
+            print(f"跳过本次运行：{e}")
+            return
 
         print(f"Canvas: {config.canvas_url}")
         print(f"下载到: {config.download_dir}")
