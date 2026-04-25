@@ -1,6 +1,16 @@
+import os
 import re
 from pathlib import Path
 from typing import Iterator
+
+# Windows 的 NTFS 默认大小写不敏感：seen_names 必须用 casefold 后的形式比较，
+# 否则同级目录里仅大小写不同的两条 Canvas 项会落到同一磁盘路径，互相覆盖或
+# mkdir 撞上同名文件。
+_CASE_INSENSITIVE_FS = os.name == "nt"
+
+
+def _name_key(name: str) -> str:
+    return name.casefold() if _CASE_INSENSITIVE_FS else name
 
 # Windows device names are reserved regardless of extension (e.g. "NUL.txt" is illegal).
 _WINDOWS_RESERVED = frozenset({
@@ -32,6 +42,14 @@ def sanitize_name(name: str, max_len: int = 150) -> str:
         if len(suffix) > max_len - _min_stem:
             suffix = suffix[: max(0, max_len - _min_stem)]
         stem = stem[: max_len - len(suffix)]
+        # 截断后 stem 末尾的保护下划线可能被切掉（极端情形：stem 原本就是 "CON_"、
+        # 可用长度只剩 3，被截成 "CON" 又撞上保留名）。再判一次并强制保留 "_"。
+        if stem.upper() in _WINDOWS_RESERVED:
+            if len(stem) + 1 <= max_len - len(suffix):
+                stem = stem + "_"
+            else:
+                # 连挂 "_" 的位置都没有 → 把 stem 最后一位替换成 "_"
+                stem = (stem[:-1] + "_") if stem else "_"
         name = stem + suffix
     return name
 
@@ -103,29 +121,31 @@ def walk_folder(
     # #9 fix: 过滤自引用及所有已访问的祖先（原来只过滤 self-reference）
     subfolders = [s for s in subfolders if s.id not in _visited]
 
-    seen_names = set()
+    # seen_keys 存的是 _name_key 折叠后的形式（Windows 上是 casefold），
+    # 用来做"两个名字在文件系统层是否冲突"的判断。
+    seen_keys: set[str] = set()
 
     resolved_subfolders = []
     for sub in subfolders:
         sub_name = sanitize_name(getattr(sub, "name", None) or f"folder_{sub.id}")
-        if sub_name in seen_names:
+        if _name_key(sub_name) in seen_keys:
             path = Path(sub_name)
             sub_name = f"{path.stem}_{sub.id}{path.suffix}"
-            if sub_name in seen_names:
+            if _name_key(sub_name) in seen_keys:
                 sub_name = f"folder_{sub.id}"
-        seen_names.add(sub_name)
+        seen_keys.add(_name_key(sub_name))
         resolved_subfolders.append((sub, sub_name))
 
     for f in files:
         name = sanitize_name(getattr(f, "display_name", None) or f"file_{f.id}")
-        if name in seen_names:
+        if _name_key(name) in seen_keys:
             path = Path(name)
             name = f"{path.stem}_{f.id}{path.suffix}"
-            if name in seen_names:
+            if _name_key(name) in seen_keys:
                 # stem_{id}.ext still collides (another file already had that exact name);
                 # fall back to id-only which is guaranteed unique.
                 name = f"file_{f.id}"
-        seen_names.add(name)
+        seen_keys.add(_name_key(name))
         yield f, local_base / name
 
     for sub, sub_name in resolved_subfolders:

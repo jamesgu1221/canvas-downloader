@@ -10,7 +10,10 @@ if sys.stdout is None or sys.stderr is None:
     import atexit
     _log_path = Path(__file__).resolve().parent.parent / "canvas_dl.log"
     # #25: errors="replace" prevents UnicodeEncodeError on unusual filenames
-    _log_file = open(_log_path, "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+    # buffering=1（行缓冲）：定时任务以 pythonw.exe 调起时，import 阶段或外层
+    # 异常的 traceback 必须立刻刷盘；默认块缓冲下早期崩溃会让 canvas_dl.log 留
+    # 空，定时任务静默失败无从诊断。
+    _log_file = open(_log_path, "w", encoding="utf-8", errors="replace", buffering=1)  # noqa: SIM115
     atexit.register(_log_file.close)
     if sys.stdout is None:
         sys.stdout = _log_file
@@ -18,6 +21,7 @@ if sys.stdout is None or sys.stderr is None:
         sys.stderr = _log_file
 
 import requests.exceptions
+from canvasapi.exceptions import ResourceDoesNotExist
 from tqdm import tqdm
 
 from .config import load_config
@@ -83,7 +87,7 @@ def process_course(client, state, config, course, course_bar) -> int:
 
     try:
         root = get_course_root_folder(client, course)
-    except Exception as e:
+    except (ResourceDoesNotExist, requests.exceptions.RequestException) as e:
         _log(f"  [{course_name}] 获取文件夹失败（可能是权限不足）：{e}")
         course_bar.update(1)
         return 0
@@ -96,7 +100,7 @@ def process_course(client, state, config, course, course_bar) -> int:
     # Collect all files first for accurate progress bar
     try:
         all_files = list(walk_folder(client, root, course_dir))
-    except Exception as e:
+    except (ResourceDoesNotExist, requests.exceptions.RequestException) as e:
         _log(f"  [{course_name}] 遍历文件夹失败：{e}")
         course_bar.update(1)
         return 0
@@ -136,7 +140,7 @@ def process_course(client, state, config, course, course_bar) -> int:
 
             try:
                 client.download_file(url, local_path)
-                state.record(canvas_file, local_path)
+                state.record(canvas_file)
                 downloaded += 1
             except OSError as e:
                 if "No space left" in str(e) or "磁盘空间不足" in str(e):

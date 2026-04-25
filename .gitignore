@@ -1,10 +1,43 @@
+# ─── 机密 / 本地配置 ───
 .env
+
+# ─── 运行时生成文件 ───
 sync_state.json
 sync_state.lock
 sync_state.tmp
 courses.json
+
+# ─── 日志 ───
 canvas_dl.log
 canvas_gui.log
+canvas_gui_qt.log
+*.log
+
+# ─── Python ───
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 .venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# ─── IDE / 编辑器 ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── 操作系统 ───
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ─── 打包 / 缓存 ───
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

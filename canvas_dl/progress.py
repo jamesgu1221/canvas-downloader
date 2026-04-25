@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 
 # GUI 模式下，进度条不走终端 tqdm，而是把事件以 @@PROGRESS@@\t... 单行
-# ASCII 的形式发到 stdout，由 canvas_dl.gui 的子进程读取管道驱动 ttk.Progressbar。
+# ASCII 的形式发到 stdout，由 canvas_dl.gui_qt 的子进程读取管道驱动 ProgressBar。
 # 保留与 tqdm 兼容的接口：__enter__ / __exit__ / update / set_postfix_str / write。
 # #19: accept common truthy values, not just "1"
 GUI_MODE = os.environ.get("CANVAS_DL_GUI_MODE", "").lower() in ("1", "true", "yes", "on")

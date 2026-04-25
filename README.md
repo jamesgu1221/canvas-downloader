@@ -49,12 +49,18 @@ python -m canvas_dl --token YOUR_TOKEN --url https://oc.sjtu.edu.cn --dir D:\Cou
 
 ### 图形界面
 
-双击 `canvas_gui.vbs` 启动。界面提供：
+双击 `canvas_gui.vbs` 启动（PySide6 + qfluentwidgets，Win11 Mica 风格）。
+或在终端运行 `python -m canvas_dl.gui_qt`。界面提供：
 
 - 立即运行与可视化下载进度
 - 定时任务管理（可设置多个每日时间点，如同时设 08:00 和 22:00）
 - 下载路径修改（直接写入 `.env`）
 - 课程启用/禁用勾选（自动保存，外部改动自动重新加载）
+- 主题切换（跟随系统 / 浅色 / 深色）、Canvas API Token 设置
+
+> GUI 需要 Windows 11 22H2+ 才能看到 Mica 效果；Win10 / 旧版自动降级为常规窗口，不影响功能。
+>
+> 启动时会自动应用一组 qfluentwidgets popup 渲染补丁（`canvas_dl/gui_qt/_patches.py`），消除 Win11 25H2 + Mica 下的下拉框与 tooltip 周围的灰色矩形外框。
 
 ## 文件结构
 
