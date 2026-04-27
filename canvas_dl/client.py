@@ -2,6 +2,7 @@ import time
 import os
 import requests
 from pathlib import Path
+from urllib.parse import urlparse
 from canvasapi import Canvas
 from canvasapi.exceptions import ResourceDoesNotExist
 from .config import AppConfig
@@ -28,6 +29,21 @@ class CanvasClient:
         self.canvas = Canvas(config.canvas_url, config.api_token)
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {config.api_token}"
+        self._canvas_origin = self._origin(config.canvas_url)
+
+    @staticmethod
+    def _origin(url: str) -> tuple[str, str]:
+        parsed = urlparse(url)
+        return parsed.scheme.lower(), parsed.netloc.lower()
+
+    def _validate_download_url(self, url: str) -> None:
+        scheme, netloc = self._origin(url)
+        if scheme != "https":
+            raise RuntimeError("下载失败：下载 URL 必须使用 HTTPS。")
+        if (scheme, netloc) != self._canvas_origin:
+            raise RuntimeError(
+                f"下载失败：拒绝非 Canvas 同源下载 URL（{netloc or 'unknown'}）。"
+            )
 
     def get_courses(self):
         try:
@@ -60,6 +76,7 @@ class CanvasClient:
 
     def download_file(self, url: str, dest: Path) -> None:
         """Stream-download url to dest. Raises on failure."""
+        self._validate_download_url(url)
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         part = dest.with_suffix(dest.suffix + ".part")

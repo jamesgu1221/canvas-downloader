@@ -242,6 +242,13 @@ class HomePage(ContentPage):
         self._log.insertPlainText(text)
         self._log.moveCursor(self._log.textCursor().MoveOperation.End)
 
+    def _progress_int(self, value: str, field: str) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            self._append_log(f"[进度解析跳过] {field}={value!r}\n")
+            return None
+
     def _handle_progress(self, parts: list[str]) -> None:
         if len(parts) < 3:
             return
@@ -250,20 +257,29 @@ class HomePage(ContentPage):
         rest = parts[3:]
         if kind == "course":
             if event == "start" and rest:
-                total = max(int(rest[0]), 1)
+                total_raw = self._progress_int(rest[0], "course.total")
+                if total_raw is None:
+                    return
+                total = max(total_raw, 1)
                 self._course_value = 0
                 self._course_bar.setRange(0, total)
                 self._course_bar.setValue(0)
                 self._course_label.setText(f"总进度  0 / {rest[0]} 门")
             elif event == "tick" and rest:
-                self._course_value += int(rest[0])
+                step = self._progress_int(rest[0], "course.tick")
+                if step is None:
+                    return
+                self._course_value += step
                 total = self._course_bar.maximum()
                 self._course_bar.setValue(self._course_value)
                 self._course_label.setText(f"总进度  {self._course_value} / {total} 门")
         elif kind == "file":
             if event == "start" and len(rest) >= 2:
                 course_name, total_s = rest[0], rest[1]
-                total = max(int(total_s), 1)
+                total_raw = self._progress_int(total_s, "file.total")
+                if total_raw is None:
+                    return
+                total = max(total_raw, 1)
                 self._current_course_name = course_name
                 self._file_value = 0
                 self._file_bar.setRange(0, total)
@@ -271,7 +287,10 @@ class HomePage(ContentPage):
                 self._file_label.setText(f"当前课  0 / {total_s} 文件 — {course_name}")
                 self._file_postfix.setText("")
             elif event == "tick" and rest:
-                self._file_value += int(rest[0])
+                step = self._progress_int(rest[0], "file.tick")
+                if step is None:
+                    return
+                self._file_value += step
                 total = self._file_bar.maximum()
                 self._file_bar.setValue(self._file_value)
                 self._file_label.setText(

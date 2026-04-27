@@ -43,9 +43,12 @@ python -m canvas_dl --only-course 87629 12345
 # 跳过某门课程
 python -m canvas_dl --skip-course 87629
 
-# 临时覆盖 .env 中的配置（不修改文件）
-python -m canvas_dl --token YOUR_TOKEN --url https://oc.sjtu.edu.cn --dir D:\Courses
+# 临时覆盖 Canvas URL 和下载目录（不修改文件）
+python -m canvas_dl --url https://oc.sjtu.edu.cn --dir D:\Courses
 ```
+
+> 不建议通过 `--token` 传入 API Token；命令行参数可能进入 shell 历史或进程列表。
+> 请优先把 Token 写入 `.env`，或在 GUI 设置页保存。
 
 ### 图形界面
 

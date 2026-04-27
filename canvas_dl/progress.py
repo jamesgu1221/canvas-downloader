@@ -10,13 +10,18 @@ from tqdm import tqdm
 GUI_MODE = os.environ.get("CANVAS_DL_GUI_MODE", "").lower() in ("1", "true", "yes", "on")
 
 
+def _safe_field(value: object) -> str:
+    """Return a single progress-protocol field."""
+    return str(value or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
+
+
 class _GuiBar:
     def __init__(self, kind: str, total: int, label: str = ""):
         self.kind = kind
         if kind == "course":
             print(f"@@PROGRESS@@\tcourse\tstart\t{total}", flush=True)
         else:
-            print(f"@@PROGRESS@@\tfile\tstart\t{label}\t{total}", flush=True)
+            print(f"@@PROGRESS@@\tfile\tstart\t{_safe_field(label)}\t{total}", flush=True)
 
     def __enter__(self):
         return self
@@ -30,9 +35,7 @@ class _GuiBar:
 
     def set_postfix_str(self, s: str):
         if self.kind == "file":
-            # 制表符会破坏事件分隔，替换为空格
-            safe = (s or "").replace("\t", " ").replace("\n", " ")
-            print(f"@@PROGRESS@@\tfile\tpostfix\t{safe}", flush=True)
+            print(f"@@PROGRESS@@\tfile\tpostfix\t{_safe_field(s)}", flush=True)
 
     def write(self, msg: str):
         print(msg, flush=True)
@@ -62,5 +65,5 @@ def report_empty_course(course_name: str) -> None:
     if not GUI_MODE:
         return
     label = course_name[:28] if len(course_name) > 28 else course_name
-    print(f"@@PROGRESS@@\tfile\tstart\t{label}\t0", flush=True)
+    print(f"@@PROGRESS@@\tfile\tstart\t{_safe_field(label)}\t0", flush=True)
     print(f"@@PROGRESS@@\tfile\tend", flush=True)

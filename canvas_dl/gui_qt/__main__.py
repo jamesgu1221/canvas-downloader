@@ -28,5 +28,18 @@ if sys.stdout is None or sys.stderr is None:
 if __name__ == "__main__":
     # 延后到日志重定向生效之后再 import app；否则 PySide6 / qfluentwidgets 缺失
     # 时的 ImportError 仍然会在 pythonw.exe 下被静默丢弃。
-    from .app import main
+    try:
+        from .app import main
+    except ModuleNotFoundError as e:
+        missing = e.name or "未知模块"
+        print(
+            "GUI 启动失败：缺少 Python 依赖 "
+            f"{missing!r}。\n"
+            "请在项目目录运行：\n"
+            "  pip install -r requirements.txt",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(1)
+
     main()

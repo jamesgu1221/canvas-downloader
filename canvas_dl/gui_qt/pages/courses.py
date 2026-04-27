@@ -17,6 +17,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -180,22 +181,39 @@ class CoursesPage(ContentPage):
         cid = entry.get("id")
 
         name_label = StrongBodyLabel(name, row)
+        name_label.setWordWrap(True)
+        name_label.setToolTip(name)
+        name_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         id_label = CaptionLabel(f"[{cid}]", row)
         id_label.setTextColor("#777", "#aaa")
+        id_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Preferred,
+        )
 
-        lay.addWidget(name_label)
+        lay.addWidget(name_label, 1)
         lay.addWidget(id_label)
 
         if is_inactive:
             tag = CaptionLabel("Canvas 上已不可见，开启以强制激活", row)
             tag.setTextColor("#b26a00", "#e7a24a")
+            tag.setWordWrap(True)
+            tag.setSizePolicy(
+                QSizePolicy.Policy.Fixed,
+                QSizePolicy.Policy.Preferred,
+            )
             lay.addWidget(tag)
-
-        lay.addStretch(1)
 
         sw = SwitchButton(row)
         sw.setOnText("")
         sw.setOffText("")
+        sw.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
         sw.setChecked(bool(entry.get("enabled", True)))
         sw.checkedChanged.connect(lambda _checked, e=entry: self._on_switch_changed(e))
         lay.addWidget(sw)
