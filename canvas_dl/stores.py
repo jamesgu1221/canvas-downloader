@@ -11,9 +11,10 @@ from dotenv import dotenv_values
 from .paths import AppPaths, get_app_paths
 
 
+DEFAULT_CANVAS_URL = "https://oc.sjtu.edu.cn"
 DEFAULT_DOWNLOAD_DIR = r"D:\OneDrive\Desktop\课程材料"
 DEFAULT_SETTINGS = {
-    "canvas_url": "",
+    "canvas_url": DEFAULT_CANVAS_URL,
     "download_dir": DEFAULT_DOWNLOAD_DIR,
     "request_delay": 0.3,
 }
@@ -47,7 +48,7 @@ def _save_json(path: Path, data: Any) -> None:
 
 @dataclass
 class AppSettings:
-    canvas_url: str = ""
+    canvas_url: str = DEFAULT_CANVAS_URL
     download_dir: str = DEFAULT_DOWNLOAD_DIR
     request_delay: float = 0.3
 
@@ -115,7 +116,7 @@ def migrate_legacy(paths: AppPaths | None = None) -> bool:
 
     if legacy_env.exists():
         values = dotenv_values(str(legacy_env))
-        if not settings.canvas_url and values.get("CANVAS_URL"):
+        if settings.canvas_url in ("", DEFAULT_CANVAS_URL) and values.get("CANVAS_URL"):
             settings.canvas_url = str(values["CANVAS_URL"]).strip().rstrip("/")
         if (
             settings.download_dir == DEFAULT_DOWNLOAD_DIR

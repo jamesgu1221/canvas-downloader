@@ -129,6 +129,5 @@ pyinstaller canvas_gui_qt.spec
 生成文件：
 
 - `dist\CanvasDownloader.exe`：GUI 程序，无控制台窗口。
-- `dist\CanvasDownloaderSync.exe`：命令行同步助手，供 Windows 任务计划程序调用，也方便手动排查输出。
 
-发布时两个 exe 放在同一目录。GUI 中创建定时任务时，源码运行会注册 `pythonw.exe -m canvas_dl`；打包后会优先注册同目录的 `CanvasDownloaderSync.exe`，目标机器不需要额外安装 Python。
+发布时只需要给用户 `CanvasDownloader.exe`。GUI 中创建定时任务时，源码运行会注册 `pythonw.exe -m canvas_dl`；打包后会复用同一个 `CanvasDownloader.exe --canvas-dl-cli` 运行后台同步，目标机器不需要额外安装 Python。

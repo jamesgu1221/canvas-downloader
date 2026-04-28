@@ -11,8 +11,8 @@
 | `courses.json` | 旧版课程配置；首次启动会自动迁移 |
 | `canvas_gui.vbs` | 无黑窗启动 GUI（调 `canvas_dl.gui_qt`） |
 | `canvas_gui_qt.py` | PyInstaller GUI 打包入口；正常启动 GUI，保留内部 CLI 兼容开关 |
-| `canvas_cli.py` | PyInstaller 同步助手入口；用于生成 `CanvasDownloaderSync.exe` |
-| `canvas_gui_qt.spec` | PyInstaller 打包配置；生成 GUI exe 与同步助手 exe |
+| `canvas_cli.py` | CLI 同步入口；调试或单独打包命令行版本时使用 |
+| `canvas_gui_qt.spec` | PyInstaller 打包配置；生成单文件 GUI exe |
 | `pytest.ini` | pytest 配置；指定测试目录与本地包导入路径 |
 | `README.md` | 用户文档 |
 | `STRUCTURE.md` | 项目结构说明 |
@@ -62,7 +62,7 @@
 | 文件 | 职责 |
 |------|------|
 | `env.py` | GUI 配置读写兼容层，实际读写用户配置目录 |
-| `schedule.py` | PowerShell Task Scheduler 脚本生成与调用；源码运行用 `pythonw.exe -m canvas_dl`，打包后优先调用同目录 `CanvasDownloaderSync.exe` |
+| `schedule.py` | PowerShell Task Scheduler 脚本生成与调用；源码运行用 `pythonw.exe -m canvas_dl`，打包后复用 `CanvasDownloader.exe --canvas-dl-cli` |
 
 ## 运行时生成文件
 

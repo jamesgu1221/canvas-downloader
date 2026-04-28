@@ -37,9 +37,6 @@ def _resolve_runner() -> tuple[Path, str]:
     因此注册前在这里完成回退。
     """
     if _is_frozen():
-        sync_exe = runtime_root() / "CanvasDownloaderSync.exe"
-        if sync_exe.exists():
-            return sync_exe, ""
         return Path(sys.executable).resolve(), "--canvas-dl-cli"
 
     python = Path(sys.executable).resolve()
