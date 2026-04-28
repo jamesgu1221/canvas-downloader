@@ -33,7 +33,7 @@ from ..theme import apply_system_theme, install_theme_listener, set_follow_syste
 from ._content import ContentPage
 
 
-_APP_VERSION = "v1.1.0"
+_APP_VERSION = "v1.0.1"
 _REPO_URL = "https://github.com/jamesgu1221/canvas-downloader"
 
 
