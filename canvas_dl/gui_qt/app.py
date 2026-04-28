@@ -76,9 +76,8 @@ class CanvasApp(FluentWindow):
             print(f"[gui_qt] Mica 未启用：{e}", file=sys.stderr)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """关窗前若下载子进程仍在运行，弹确认框并终止，防止进程泄漏。"""
-        proc = getattr(self.home_page, "_proc", None)
-        if proc is not None and proc.poll() is None:
+        """关窗前若下载任务仍在运行，弹确认框并请求停止。"""
+        if self.home_page.is_running():
             box = MessageBox("确认退出", "下载仍在进行，终止并退出吗？", self)
             if not box.exec():
                 event.ignore()

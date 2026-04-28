@@ -1,21 +1,12 @@
 """主页：立即运行 + 两级进度条 + 日志。
 
-子进程协议与旧版 Tk GUI 一致：
-- 用 `python -u -m canvas_dl` 启动（`-u` 避免日志延迟）；
-- 环境变量 `CANVAS_DL_GUI_MODE=1` 让子进程切到 `_GuiBar` 管道输出；
-- 子进程 stdout 里，`@@PROGRESS@@\t...` 由 `_parse_progress_line` 解析为进度事件，
-  其他行当作普通日志追加。
+GUI 不再启动 CLI 子进程，而是在后台 QThread 中直接调用 SyncService；
+核心层通过 SyncEvent 回传进度和日志。
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-import threading
-from pathlib import Path
-
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QPlainTextEdit,
@@ -34,24 +25,48 @@ from qfluentwidgets import (
     PushButton,
 )
 
+from ...config import ConfigError, load_config
+from ...events import (
+    CallbackReporter,
+    CourseProgressStarted,
+    CourseProgressTick,
+    FilePostfix,
+    FileProgressEnded,
+    FileProgressStarted,
+    FileProgressTick,
+    LogEvent,
+    RunFinished,
+    RunStarted,
+    SyncEvent,
+)
+from ...paths import get_app_paths
+from ...service import CancelToken, RunOptions, SyncError, SyncService
 from ._content import ContentPage
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_PYTHON = sys.executable
-_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+class _SyncWorker(QObject):
+    event = Signal(object)
+    finished = Signal(int)
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancel_token = CancelToken()
 
-class _ProcBridge(QObject):
-    """把子进程线程的事件投递回 GUI 线程。
-
-    PySide6 跨线程 signal 在 AutoConnection 下会自动走 QueuedConnection，
-    因此在 `_pump_stdout` 里直接 emit 即可安全回到主线程槽函数。
-    """
-
-    line = Signal(str)            # 一般日志行（含换行）
-    progress = Signal(list)       # 解析后的 @@PROGRESS@@ 字段列表
-    finished = Signal(int)        # 退出码
+    def run(self) -> None:
+        rc = 0
+        try:
+            paths = get_app_paths()
+            config = load_config(None, paths)
+            reporter = CallbackReporter(self.event.emit)
+            service = SyncService(config, paths)
+            service.run(RunOptions(), reporter, self.cancel_token)
+        except (ConfigError, SyncError, RuntimeError) as e:
+            rc = 1
+            self.event.emit(LogEvent(str(e)))
+        except BaseException as e:  # noqa: BLE001 - keep GUI state recoverable
+            rc = 1
+            self.event.emit(LogEvent(f"未处理错误：{e}"))
+        self.finished.emit(rc)
 
 
 class HomePage(ContentPage):
@@ -60,12 +75,8 @@ class HomePage(ContentPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(object_name="HomePage", parent=parent)
 
-        self._proc: subprocess.Popen | None = None
-        self._bridge = _ProcBridge()
-        self._bridge.line.connect(self._append_log)
-        self._bridge.progress.connect(self._handle_progress)
-        self._bridge.finished.connect(self._on_proc_end)
-
+        self._thread: QThread | None = None
+        self._worker: _SyncWorker | None = None
         self._current_course_name: str = ""
         self._course_value = 0
         self._file_value = 0
@@ -77,7 +88,6 @@ class HomePage(ContentPage):
 
         self._reset_progress()
 
-    # ─── UI ───
     def _build_action_card(self) -> QWidget:
         card = HeaderCardWidget(self)
         card.setTitle("立即运行")
@@ -169,145 +179,105 @@ class HomePage(ContentPage):
         card.viewLayout.addWidget(container)
         return card
 
-    # ─── actions ───
     def _on_run_clicked(self) -> None:
-        if self._proc and self._proc.poll() is None:
+        if self._thread is not None and self._thread.isRunning():
             InfoBar.warning(
                 title="已在运行",
-                content="当前已有下载子进程，请等待完成或点击「终止」。",
+                content="当前已有下载任务，请等待完成或点击「终止」。",
                 position=InfoBarPosition.TOP,
                 parent=self.window(),
                 duration=3000,
             )
             return
 
-        cmd = [_PYTHON, "-u", "-m", "canvas_dl"]
-        env = {**os.environ, "CANVAS_DL_GUI_MODE": "1", "PYTHONIOENCODING": "utf-8"}
-
         self._reset_progress()
         self._log.clear()
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
-        self._status_label.setText("运行中…")
+        self._status_label.setText("运行中...")
 
-        try:
-            self._proc = subprocess.Popen(
-                cmd,
-                cwd=str(PROJECT_ROOT),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                creationflags=_CREATE_NO_WINDOW,
-            )
-        except OSError as e:
-            self._append_log(f"[启动失败] {e}\n")
-            self._run_btn.setEnabled(True)
-            self._stop_btn.setEnabled(False)
-            self._status_label.setText("启动失败")
-            self._proc = None
-            return
-
-        threading.Thread(target=self._pump_stdout, args=(self._proc,), daemon=True).start()
+        self._thread = QThread(self)
+        self._worker = _SyncWorker()
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.event.connect(self._handle_event)
+        self._worker.finished.connect(self._on_worker_finished)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.start()
 
     def _on_stop_clicked(self) -> None:
-        if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.terminate()
-            except OSError:
-                pass
-            self._status_label.setText("终止中…")
+        if self._worker is not None:
+            self._worker.cancel_token.cancel()
+            self._status_label.setText("终止中...")
 
-    def _pump_stdout(self, proc: subprocess.Popen) -> None:
-        rc = -1
-        try:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                if line.startswith("@@PROGRESS@@\t"):
-                    self._bridge.progress.emit(line.rstrip("\r\n").split("\t"))
-                else:
-                    self._bridge.line.emit(line)
-        except Exception as e:  # noqa: BLE001 — pump 线程必须永不抛，否则 UI 永远等不到 finished
-            self._bridge.line.emit(f"[读取错误] {e}\n")
-        finally:
-            rc = proc.wait()
-        self._bridge.finished.emit(rc)
-
-    # ─── slots on GUI thread ───
     def _append_log(self, text: str) -> None:
         self._log.moveCursor(self._log.textCursor().MoveOperation.End)
-        self._log.insertPlainText(text)
+        self._log.insertPlainText(text.rstrip("\n") + "\n")
         self._log.moveCursor(self._log.textCursor().MoveOperation.End)
 
-    def _progress_int(self, value: str, field: str) -> int | None:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            self._append_log(f"[进度解析跳过] {field}={value!r}\n")
-            return None
-
-    def _handle_progress(self, parts: list[str]) -> None:
-        if len(parts) < 3:
+    def _handle_event(self, event: SyncEvent) -> None:
+        if isinstance(event, RunStarted):
+            self._append_log(f"Canvas: {event.canvas_url}")
+            self._append_log(f"下载到: {event.download_dir}")
+            if event.dry_run:
+                self._append_log("[DRY RUN 模式 — 不实际下载]")
             return
-        # parts[0] == '@@PROGRESS@@'
-        kind, event = parts[1], parts[2]
-        rest = parts[3:]
-        if kind == "course":
-            if event == "start" and rest:
-                total_raw = self._progress_int(rest[0], "course.total")
-                if total_raw is None:
-                    return
-                total = max(total_raw, 1)
-                self._course_value = 0
-                self._course_bar.setRange(0, total)
-                self._course_bar.setValue(0)
-                self._course_label.setText(f"总进度  0 / {rest[0]} 门")
-            elif event == "tick" and rest:
-                step = self._progress_int(rest[0], "course.tick")
-                if step is None:
-                    return
-                self._course_value += step
-                total = self._course_bar.maximum()
-                self._course_bar.setValue(self._course_value)
-                self._course_label.setText(f"总进度  {self._course_value} / {total} 门")
-        elif kind == "file":
-            if event == "start" and len(rest) >= 2:
-                course_name, total_s = rest[0], rest[1]
-                total_raw = self._progress_int(total_s, "file.total")
-                if total_raw is None:
-                    return
-                total = max(total_raw, 1)
-                self._current_course_name = course_name
-                self._file_value = 0
-                self._file_bar.setRange(0, total)
-                self._file_bar.setValue(0)
-                self._file_label.setText(f"当前课  0 / {total_s} 文件 — {course_name}")
-                self._file_postfix.setText("")
-            elif event == "tick" and rest:
-                step = self._progress_int(rest[0], "file.tick")
-                if step is None:
-                    return
-                self._file_value += step
-                total = self._file_bar.maximum()
-                self._file_bar.setValue(self._file_value)
-                self._file_label.setText(
-                    f"当前课  {self._file_value} / {total} 文件 — {self._current_course_name}"
-                )
-            elif event == "postfix" and rest:
-                self._file_postfix.setText(rest[0])
-            elif event == "end":
-                self._file_postfix.setText("")
+        if isinstance(event, LogEvent):
+            self._append_log(event.message)
+            return
+        if isinstance(event, CourseProgressStarted):
+            total = max(event.total, 1)
+            self._course_value = 0
+            self._course_bar.setRange(0, total)
+            self._course_bar.setValue(0)
+            self._course_label.setText(f"总进度  0 / {event.total} 门")
+            return
+        if isinstance(event, CourseProgressTick):
+            self._course_value += event.step
+            total = self._course_bar.maximum()
+            self._course_bar.setValue(self._course_value)
+            self._course_label.setText(f"总进度  {self._course_value} / {total} 门")
+            return
+        if isinstance(event, FileProgressStarted):
+            total = max(event.total, 1)
+            self._current_course_name = event.course_name
+            self._file_value = 0
+            self._file_bar.setRange(0, total)
+            self._file_bar.setValue(0)
+            self._file_label.setText(f"当前课  0 / {event.total} 文件 — {event.course_name}")
+            self._file_postfix.setText("")
+            return
+        if isinstance(event, FileProgressTick):
+            self._file_value += event.step
+            total = self._file_bar.maximum()
+            self._file_bar.setValue(self._file_value)
+            self._file_label.setText(
+                f"当前课  {self._file_value} / {total} 文件 — {self._current_course_name}"
+            )
+            return
+        if isinstance(event, FilePostfix):
+            self._file_postfix.setText(event.text)
+            return
+        if isinstance(event, FileProgressEnded):
+            self._file_postfix.setText("")
+            return
+        if isinstance(event, RunFinished):
+            if event.cancelled:
+                self._append_log(f"已取消，已下载 {event.downloaded} 个文件")
+            else:
+                self._append_log(f"完成！本次共下载 {event.downloaded} 个文件")
 
-    def _on_proc_end(self, rc: int) -> None:
-        if rc != 0:
-            self._append_log(f"\n[退出码 {rc}]\n")
+    def _on_worker_finished(self, rc: int) -> None:
+        if self.sender() is not self._worker:
+            return
+
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._status_label.setText(f"完成（退出码 {rc}）" if rc == 0 else f"失败（退出码 {rc}）")
-        self._proc = None
+        self._worker = None
+        self._thread = None
 
         win = self.window()
         if rc == 0:
@@ -322,14 +292,13 @@ class HomePage(ContentPage):
         else:
             InfoBar.error(
                 title="失败",
-                content=f"下载子进程以退出码 {rc} 结束，详见日志。",
+                content=f"下载任务以退出码 {rc} 结束，详见日志。",
                 orient=Qt.Orientation.Horizontal,
                 position=InfoBarPosition.TOP,
                 parent=win,
                 duration=5000,
             )
 
-    # ─── reset ───
     def _reset_progress(self) -> None:
         self._course_bar.setRange(0, 1)
         self._course_bar.setValue(0)
@@ -342,11 +311,12 @@ class HomePage(ContentPage):
         self._course_value = 0
         self._file_value = 0
 
-    # ─── cleanup ───
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.isRunning()
+
     def shutdown(self) -> None:
-        """窗口关闭前外部调用，防止子进程泄漏。"""
-        if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.terminate()
-            except OSError:
-                pass
+        if self._worker is not None:
+            self._worker.cancel_token.cancel()
+        if self._thread is not None and self._thread.isRunning():
+            self._thread.quit()
+            self._thread.wait(3000)

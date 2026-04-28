@@ -13,24 +13,40 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ..paths import runtime_root
 
-PYTHONW = Path(sys.executable).with_name("pythonw.exe")
-PYTHON = Path(sys.executable)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TASK_PREFIX = "Canvas课件下载"
 
 
-def _resolve_runner() -> Path:
-    """优先用 pythonw.exe（无黑窗），不存在时回退到 python.exe。
+def _is_frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
 
+
+def _resolve_runner() -> tuple[Path, str]:
+    """Return the executable and arguments used by the scheduled task.
+
+    Source runs use pythonw.exe + `-m canvas_dl`. Frozen GUI builds reuse the
+    current exe with a private CLI switch handled by `canvas_dl.gui_qt.__main__`.
+    That keeps scheduled sync working even when there is no Python installation
+    on the target machine.
+
+    源码运行时优先用 pythonw.exe（无黑窗），不存在时回退到 python.exe。
     embedded / 精简 Python 发行版可能不带 pythonw.exe；这种情况下若仍写
     pythonw.exe 路径到任务里，触发执行时 Task Scheduler 找不到 EXE，
     LastTaskResult 返回非零错误码，但用户在 GUI 里只看到神秘的 0x... —
     因此注册前在这里完成回退。
     """
-    if PYTHONW.exists():
-        return PYTHONW
-    return PYTHON
+    if _is_frozen():
+        sync_exe = runtime_root() / "CanvasDownloaderSync.exe"
+        if sync_exe.exists():
+            return sync_exe, ""
+        return Path(sys.executable).resolve(), "--canvas-dl-cli"
+
+    python = Path(sys.executable).resolve()
+    pythonw = python.with_name("pythonw.exe")
+    if pythonw.exists():
+        return pythonw, "-m canvas_dl"
+    return python, "-m canvas_dl"
 
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
@@ -119,11 +135,13 @@ def _ps_escape(s: str) -> str:
 def register_script(time_str: str) -> tuple[str, str]:
     """返回 (task_name, ps_script)，用于注册每天 `time_str` 的 daily 任务。"""
     tn = task_name(time_str)
-    runner = _ps_escape(str(_resolve_runner()))
-    work_dir = _ps_escape(str(PROJECT_ROOT))
+    runner_path, runner_args = _resolve_runner()
+    runner = _ps_escape(str(runner_path))
+    arguments = _ps_escape(runner_args)
+    work_dir = _ps_escape(str(runtime_root()))
     tn_escaped = _ps_escape(tn)
     script = fr"""
-$act = New-ScheduledTaskAction -Execute '{runner}' -Argument '-m canvas_dl' -WorkingDirectory '{work_dir}'
+$act = New-ScheduledTaskAction -Execute '{runner}' -Argument '{arguments}' -WorkingDirectory '{work_dir}'
 $trg = New-ScheduledTaskTrigger -Daily -At '{time_str}'
 $set = New-ScheduledTaskSettingsSet {_TASK_SETTINGS_FRAGMENT}
 $prin = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited

@@ -61,12 +61,15 @@ def install_theme_listener() -> None:
     if _bridge is not None:
         return
     _bridge = _ThemeBridge()
+    bridge = _bridge
 
     def _run() -> None:
+        global _bridge
         try:
-            darkdetect.listener(_bridge.theme_changed.emit)
-        except NotImplementedError:
+            darkdetect.listener(bridge.theme_changed.emit)
+        except Exception:
             # Windows 7 / 某些 Linux DE 上无法实现，静默忽略
-            pass
+            if _bridge is bridge:
+                _bridge = None
 
     threading.Thread(target=_run, daemon=True).start()

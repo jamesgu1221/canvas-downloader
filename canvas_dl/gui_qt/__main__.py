@@ -1,5 +1,6 @@
 import sys
-from pathlib import Path
+
+from ..paths import get_app_paths
 
 # pythonw.exe 下 sys.stdout / sys.stderr 为 None。PySide6 / qfluentwidgets 导入失败
 # 或后续启动期异常都会被无声吞掉（VBS 双击没反应通常就是这个原因）。
@@ -9,7 +10,9 @@ if sys.stdout is None or sys.stderr is None:
     import atexit
     import traceback
 
-    _log_path = Path(__file__).resolve().parent.parent.parent / "canvas_gui_qt.log"
+    _paths = get_app_paths()
+    _paths.base_dir.mkdir(parents=True, exist_ok=True)
+    _log_path = _paths.gui_log_file
     # buffering=1：行缓冲。默认块缓冲下，若 Python 在 import 阶段异常退出，
     # 尚未刷盘的 Traceback 会丢失，表现为 log 为 0 字节"双击无反应"。
     _log_file = open(_log_path, "w", encoding="utf-8", errors="replace", buffering=1)  # noqa: SIM115
@@ -25,7 +28,16 @@ if sys.stdout is None or sys.stderr is None:
         _f.flush()
     sys.excepthook = _excepthook
 
-if __name__ == "__main__":
+def main() -> None:
+    if "--canvas-dl-cli" in sys.argv:
+        # PyInstaller windowed GUI builds do not have a Python interpreter next
+        # to the exe. The scheduler reuses the GUI exe and passes this private
+        # switch so the same binary can run a background CLI sync.
+        sys.argv.remove("--canvas-dl-cli")
+        from canvas_dl.__main__ import main as cli_main
+
+        sys.exit(cli_main())
+
     # 延后到日志重定向生效之后再 import app；否则 PySide6 / qfluentwidgets 缺失
     # 时的 ImportError 仍然会在 pythonw.exe 下被静默丢弃。
     try:
@@ -35,11 +47,15 @@ if __name__ == "__main__":
         print(
             "GUI 启动失败：缺少 Python 依赖 "
             f"{missing!r}。\n"
-            "请在项目目录运行：\n"
+            "请运行：\n"
             "  pip install -r requirements.txt",
             file=sys.stderr,
             flush=True,
         )
         sys.exit(1)
 
+    main()
+
+
+if __name__ == "__main__":
     main()

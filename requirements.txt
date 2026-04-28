@@ -7,3 +7,9 @@ tqdm>=4.66.0
 PySide6>=6.8.0
 PySide6-Fluent-Widgets>=1.5.0
 darkdetect>=0.8.0
+
+# Tests
+pytest>=8.0.0
+
+# Packaging
+pyinstaller>=6.0.0

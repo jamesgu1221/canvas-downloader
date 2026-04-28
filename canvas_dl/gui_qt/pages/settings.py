@@ -21,6 +21,7 @@ from qfluentwidgets import (
     HyperlinkButton,
     InfoBar,
     InfoBarPosition,
+    LineEdit,
     PasswordLineEdit,
     PushButton,
     StrongBodyLabel,
@@ -32,7 +33,7 @@ from ..theme import apply_system_theme, install_theme_listener, set_follow_syste
 from ._content import ContentPage
 
 
-_APP_VERSION = "1.0.0"
+_APP_VERSION = "v1.1.0"
 _REPO_URL = "https://github.com/jamesgu1221/canvas-downloader"
 
 
@@ -43,7 +44,7 @@ class SettingsPage(ContentPage):
         super().__init__(object_name="SettingsPage", parent=parent)
 
         self.add(self._build_appearance_card())
-        self.add(self._build_token_card())
+        self.add(self._build_canvas_card())
         self.add(self._build_about_card())
         self.add_stretch()
 
@@ -94,17 +95,22 @@ class SettingsPage(ContentPage):
             set_follow_system(False)
             setTheme(Theme.DARK)
 
-    # ─── API Token ───
-    def _build_token_card(self) -> QWidget:
+    # ─── Canvas 连接 ───
+    def _build_canvas_card(self) -> QWidget:
         card = HeaderCardWidget(self)
-        card.setTitle("Canvas API Token")
+        card.setTitle("Canvas 连接")
 
         desc = BodyLabel(
-            "Token 保存在项目根目录的 .env 中。获取方式：登录 Canvas → 账户设置 → "
+            f"配置保存在 {env_util.get_config_dir()}。Token 获取方式：登录 Canvas → 账户设置 → "
             "新建访问令牌。",
             card,
         )
         desc.setWordWrap(True)
+
+        self._url_edit = LineEdit(card)
+        self._url_edit.setPlaceholderText("Canvas URL，如 https://oc.sjtu.edu.cn")
+        self._url_edit.setText(env_util.get_canvas_url())
+        self._url_edit.setClearButtonEnabled(True)
 
         self._token_edit = PasswordLineEdit(card)
         self._token_edit.setPlaceholderText("在此粘贴 Token 并点击保存")
@@ -114,13 +120,14 @@ class SettingsPage(ContentPage):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch(1)
-        self._save_token_btn = PushButton(FIF.SAVE, "保存", card)
-        self._save_token_btn.clicked.connect(self._on_save_token)
-        btn_row.addWidget(self._save_token_btn)
+        self._save_canvas_btn = PushButton(FIF.SAVE, "保存", card)
+        self._save_canvas_btn.clicked.connect(self._on_save_canvas)
+        btn_row.addWidget(self._save_canvas_btn)
 
         wrap = QVBoxLayout()
         wrap.setSpacing(8)
         wrap.addWidget(desc)
+        wrap.addWidget(self._url_edit)
         wrap.addWidget(self._token_edit)
         wrap.addLayout(btn_row)
 
@@ -129,8 +136,19 @@ class SettingsPage(ContentPage):
         card.viewLayout.addWidget(container)
         return card
 
-    def _on_save_token(self) -> None:
+    def _on_save_canvas(self) -> None:
+        url = self._url_edit.text().strip()
         token = self._token_edit.text().strip()
+        if not url:
+            InfoBar.warning(
+                title="未填写",
+                content="请先填写 Canvas URL。",
+                orient=Qt.Orientation.Horizontal,
+                position=InfoBarPosition.TOP,
+                parent=self.window(),
+                duration=3000,
+            )
+            return
         if not token:
             InfoBar.warning(
                 title="未填写",
@@ -142,6 +160,7 @@ class SettingsPage(ContentPage):
             )
             return
         try:
+            env_util.set_canvas_url(url)
             env_util.set_api_token(token)
         except OSError as e:
             InfoBar.error(
@@ -155,7 +174,7 @@ class SettingsPage(ContentPage):
             return
         InfoBar.success(
             title="已保存",
-            content="Token 已写入 .env。",
+            content="Canvas URL 与 Token 已保存。",
             orient=Qt.Orientation.Horizontal,
             position=InfoBarPosition.TOP,
             parent=self.window(),
@@ -172,7 +191,7 @@ class SettingsPage(ContentPage):
 
         url = env_util.get_canvas_url()
         canvas_url_label = CaptionLabel(
-            f"当前 Canvas 实例：{url}" if url else "尚未在 .env 中配置 CANVAS_URL", card
+            f"当前 Canvas 实例：{url}" if url else "尚未配置 Canvas URL", card
         )
         canvas_url_label.setTextColor("#777", "#aaa")
         canvas_url_label.setWordWrap(True)

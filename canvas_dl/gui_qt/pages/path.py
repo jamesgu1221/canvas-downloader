@@ -1,4 +1,4 @@
-"""下载路径：PushSettingCard + QFileDialog，写入 `.env` 的 CANVAS_DOWNLOAD_DIR。"""
+"""下载路径：PushSettingCard + QFileDialog，写入统一配置目录。"""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ class PathPage(ContentPage):
         self._card.setContent(new_dir)
         InfoBar.success(
             title="已更新",
-            content=f"下载路径已写入 .env：{new_dir}",
+            content=f"下载路径已更新：{new_dir}",
             orient=Qt.Orientation.Horizontal,
             position=InfoBarPosition.TOP,
             parent=self.window(),

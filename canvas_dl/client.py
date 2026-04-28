@@ -8,6 +8,10 @@ from canvasapi.exceptions import ResourceDoesNotExist
 from .config import AppConfig
 
 
+class CanvasClientError(RuntimeError):
+    pass
+
+
 def safe_course_name(course):
     """Return course.name, or None if the course is inaccessible.
 
@@ -50,7 +54,9 @@ class CanvasClient:
             user = self.canvas.get_current_user()
             courses = list(user.get_courses(enrollment_state="active"))
         except Exception as e:
-            raise SystemExit(f"获取课程列表失败：{e}\n请检查 API token 和 Canvas URL 是否正确。")
+            raise CanvasClientError(
+                f"获取课程列表失败：{e}\n请检查 API token 和 Canvas URL 是否正确。"
+            ) from e
         return courses
 
     def get_course_folders(self, course):
@@ -81,6 +87,12 @@ class CanvasClient:
         dest.parent.mkdir(parents=True, exist_ok=True)
         part = dest.with_suffix(dest.suffix + ".part")
 
+        def _looks_like_html(chunk: bytes) -> bool:
+            prefix = chunk.lstrip()[:128].lower()
+            if prefix.startswith(b"\xef\xbb\xbf"):
+                prefix = prefix[3:].lstrip()
+            return prefix.startswith((b"<!doctype html", b"<html", b"<?xml"))
+
         def _write_body(resp):
             resp.raise_for_status()
             # SSO 重定向可能返回 200 HTML 登录页，不应写入文件
@@ -90,8 +102,20 @@ class CanvasClient:
                 raise RuntimeError(
                     f"下载失败：服务器返回 HTML（可能是登录页），Content-Type={ct!r}"
                 )
+            chunks = resp.iter_content(chunk_size=8192)
+            first_chunk = b""
+            for chunk in chunks:
+                if chunk:
+                    first_chunk = chunk
+                    break
+            if first_chunk and _looks_like_html(first_chunk):
+                raise RuntimeError(
+                    f"下载失败：服务器返回 HTML（可能是登录页），Content-Type={ct!r}"
+                )
             with open(part, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8192):
+                if first_chunk:
+                    f.write(first_chunk)
+                for chunk in chunks:
                     f.write(chunk)
 
         try:

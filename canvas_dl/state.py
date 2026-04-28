@@ -149,7 +149,7 @@ class SyncState:
             "display_name": file.display_name,
         }
 
-    def save(self) -> None:
+    def save(self, release_lock: bool = True) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_suffix(".tmp")
@@ -163,7 +163,8 @@ class SyncState:
                     tmp.unlink()
                 raise
         finally:
-            self._release_lock()
+            if release_lock:
+                self._release_lock()
 
     def close(self) -> None:
         """Release the process lock without writing — use in dry-run mode."""

@@ -16,15 +16,32 @@ pip install -r requirements.txt
 
 登录 Canvas → 右上角头像 → 设置 → 下拉找到"已批准的集成" → 点击"新建访问令牌"
 
-**2. 创建 `.env` 文件**
+**2. 配置 Canvas 连接**
 
-在项目根目录（与 `requirements.txt` 同级）新建 `.env` 文件：
+推荐在 GUI 的「设置」页填写 Canvas URL 和 API Token。配置会保存在用户配置目录：
 
+- Windows：`%APPDATA%\CanvasDownloader`
+- 其它平台：`~/.canvas-downloader`
+
+也可以直接编辑配置文件：
+
+```json
+// settings.json
+{
+  "canvas_url": "https://oc.sjtu.edu.cn",
+  "download_dir": "D:\\Courses",
+  "request_delay": 0.3
+}
 ```
-CANVAS_API_TOKEN=粘贴你的token
-CANVAS_URL=https://oc.sjtu.edu.cn
-CANVAS_DOWNLOAD_DIR=D:\Courses
+
+```json
+// secrets.json
+{
+  "canvas_api_token": "粘贴你的token"
+}
 ```
+
+旧版本项目根目录下的 `.env`、`courses.json`、`sync_state.json` 会在首次启动时自动迁移到新配置目录；旧文件不会被删除。
 
 ## 使用
 
@@ -48,7 +65,7 @@ python -m canvas_dl --url https://oc.sjtu.edu.cn --dir D:\Courses
 ```
 
 > 不建议通过 `--token` 传入 API Token；命令行参数可能进入 shell 历史或进程列表。
-> 请优先把 Token 写入 `.env`，或在 GUI 设置页保存。
+> 请优先在 GUI 设置页保存，或写入 `secrets.json`。
 
 ### 图形界面
 
@@ -57,7 +74,7 @@ python -m canvas_dl --url https://oc.sjtu.edu.cn --dir D:\Courses
 
 - 立即运行与可视化下载进度
 - 定时任务管理（可设置多个每日时间点，如同时设 08:00 和 22:00）
-- 下载路径修改（直接写入 `.env`）
+- 下载路径修改（写入用户配置目录）
 - 课程启用/禁用勾选（自动保存，外部改动自动重新加载）
 - 主题切换（跟随系统 / 浅色 / 深色）、Canvas API Token 设置
 
@@ -83,7 +100,35 @@ D:\Courses\
 
 - 重复运行会自动跳过已下载的文件（按文件大小和修改时间判断）
 - 中途按 `Ctrl-C` 会保存进度，下次运行从断点继续
-- 进度记录保存在项目根目录的 `sync_state.json`（不写入下载目录）
+- 进度记录保存在用户配置目录的 `sync_state.json`（不写入下载目录）
 - 被老师锁定 / 隐藏 / 无下载权限的文件会显示 `[跳过]` 并计入跳过数，不影响其他文件下载
 - Canvas 上名为 CON、NUL 等 Windows 保留设备名的文件/文件夹会自动在名称末尾追加 `_`（如 `NUL.pdf` → `NUL_.pdf`）
-- 课程列表同步到 `courses.json`（项目根目录），可在 GUI 勾选启用/禁用，也可直接编辑文件将 `enabled` 改为 `false`；新发现的课程默认启用
+- 课程列表同步到用户配置目录的 `courses.json`，可在 GUI 勾选启用/禁用，也可直接编辑文件将 `enabled` 改为 `false`；新发现的课程默认启用
+
+## 开发验证
+
+```bash
+python -m compileall canvas_dl canvas_gui_qt.py canvas_cli.py
+pytest
+```
+
+## 打包 exe
+
+项目提供了 PyInstaller 配置。首次打包前先安装依赖：
+
+```bash
+pip install -r requirements.txt
+```
+
+然后运行：
+
+```bash
+pyinstaller canvas_gui_qt.spec
+```
+
+生成文件：
+
+- `dist\CanvasDownloader.exe`：GUI 程序，无控制台窗口。
+- `dist\CanvasDownloaderSync.exe`：命令行同步助手，供 Windows 任务计划程序调用，也方便手动排查输出。
+
+发布时两个 exe 放在同一目录。GUI 中创建定时任务时，源码运行会注册 `pythonw.exe -m canvas_dl`；打包后会优先注册同目录的 `CanvasDownloaderSync.exe`，目标机器不需要额外安装 Python。

@@ -1,8 +1,8 @@
-import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from dotenv import load_dotenv
+
+from .paths import AppPaths, get_app_paths
+from .stores import SecretStore, SettingsStore, migrate_legacy
 
 
 @dataclass
@@ -16,12 +16,30 @@ class AppConfig:
     dry_run: bool = False
 
 
-def load_config(args=None) -> AppConfig:
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+class ConfigError(RuntimeError):
+    pass
 
-    token = os.getenv("CANVAS_API_TOKEN", "")
-    url = os.getenv("CANVAS_URL", "")
-    download_dir = os.getenv("CANVAS_DOWNLOAD_DIR", r"D:\OneDrive\Desktop\课程材料")
+
+def parse_course_ids(ids: list, flag: str) -> list[int]:
+    result = []
+    for c in ids:
+        try:
+            result.append(int(c))
+        except ValueError as e:
+            raise ConfigError(
+                f"错误：{flag} 的参数 {c!r} 不是有效的课程 ID（应为纯数字）。"
+            ) from e
+    return result
+
+
+def load_config(args=None, paths: AppPaths | None = None) -> AppConfig:
+    paths = paths or get_app_paths()
+    migrate_legacy(paths)
+
+    settings = SettingsStore(paths).load()
+    token = SecretStore(paths).get_api_token()
+    url = settings.canvas_url
+    download_dir = settings.download_dir
 
     if args:
         if getattr(args, "token", None):
@@ -31,19 +49,16 @@ def load_config(args=None) -> AppConfig:
         if getattr(args, "dir", None):
             download_dir = args.dir
 
-    # #30: use sys.exit() consistently (raises SystemExit with message → printed to stderr)
     if not token:
-        sys.exit(
+        raise ConfigError(
             "错误：未找到 CANVAS_API_TOKEN。\n"
-            "请在项目目录创建 .env 文件并填写：\n"
-            "  CANVAS_API_TOKEN=your_token_here\n\n"
+            "请在 GUI 设置页保存 Token，或在新配置目录的 secrets.json 中填写。\n\n"
             "Token 获取方式：登录 Canvas → 账户设置 → 新建访问令牌"
         )
     if not url:
-        sys.exit(
+        raise ConfigError(
             "错误：未找到 CANVAS_URL。\n"
-            "请在 .env 中填写：\n"
-            "  CANVAS_URL=https://oc.sjtu.edu.cn"
+            "请在 settings.json 中填写 canvas_url，或通过 --url 临时传入。"
         )
 
     only_courses = []
@@ -52,23 +67,12 @@ def load_config(args=None) -> AppConfig:
         only_courses = getattr(args, "only_course", None) or []
         skip_courses = getattr(args, "skip_course", None) or []
 
-    def _parse_course_ids(ids: list, flag: str) -> list[int]:
-        result = []
-        for c in ids:
-            try:
-                result.append(int(c))
-            except ValueError:
-                sys.exit(
-                    f"错误：{flag} 的参数 {c!r} 不是有效的课程 ID（应为纯数字）。"
-                )
-        return result
-
     return AppConfig(
         api_token=token,
         canvas_url=url.rstrip("/"),
-        # expanduser 让 `~/...` 写法在 Windows 与 POSIX 都展开为真实家目录
         download_dir=Path(download_dir).expanduser(),
-        only_courses=_parse_course_ids(only_courses, "--only-course"),
-        skip_courses=_parse_course_ids(skip_courses, "--skip-course"),
+        request_delay=settings.request_delay,
+        only_courses=parse_course_ids(only_courses, "--only-course"),
+        skip_courses=parse_course_ids(skip_courses, "--skip-course"),
         dry_run=getattr(args, "dry_run", False) if args else False,
     )

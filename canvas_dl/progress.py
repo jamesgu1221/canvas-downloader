@@ -1,69 +1,85 @@
-import os
+from __future__ import annotations
+
+import threading
 
 from tqdm import tqdm
 
-
-# GUI 模式下，进度条不走终端 tqdm，而是把事件以 @@PROGRESS@@\t... 单行
-# ASCII 的形式发到 stdout，由 canvas_dl.gui_qt 的子进程读取管道驱动 ProgressBar。
-# 保留与 tqdm 兼容的接口：__enter__ / __exit__ / update / set_postfix_str / write。
-# #19: accept common truthy values, not just "1"
-GUI_MODE = os.environ.get("CANVAS_DL_GUI_MODE", "").lower() in ("1", "true", "yes", "on")
-
-
-def _safe_field(value: object) -> str:
-    """Return a single progress-protocol field."""
-    return str(value or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
-
-
-class _GuiBar:
-    def __init__(self, kind: str, total: int, label: str = ""):
-        self.kind = kind
-        if kind == "course":
-            print(f"@@PROGRESS@@\tcourse\tstart\t{total}", flush=True)
-        else:
-            print(f"@@PROGRESS@@\tfile\tstart\t{_safe_field(label)}\t{total}", flush=True)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_exc):
-        print(f"@@PROGRESS@@\t{self.kind}\tend", flush=True)
-        return False
-
-    def update(self, n: int = 1):
-        print(f"@@PROGRESS@@\t{self.kind}\ttick\t{n}", flush=True)
-
-    def set_postfix_str(self, s: str):
-        if self.kind == "file":
-            print(f"@@PROGRESS@@\tfile\tpostfix\t{_safe_field(s)}", flush=True)
-
-    def write(self, msg: str):
-        print(msg, flush=True)
-
-    def close(self):
-        pass
+from .events import (
+    CourseProgressStarted,
+    CourseProgressTick,
+    FilePostfix,
+    FileProgressEnded,
+    FileProgressStarted,
+    FileProgressTick,
+    LogEvent,
+    Reporter,
+    RunFinished,
+    RunStarted,
+    SyncEvent,
+)
 
 
-def make_course_bar(total: int):
-    if GUI_MODE:
-        return _GuiBar("course", total)
-    return tqdm(total=total, unit="门课", desc="总进度", position=0)
+class TqdmReporter(Reporter):
+    def __init__(self) -> None:
+        self._write_lock = threading.Lock()
+        self._course_bar = None
+        self._file_bar = None
 
+    def emit(self, event: SyncEvent) -> None:
+        if isinstance(event, RunStarted):
+            self._write(f"Canvas: {event.canvas_url}")
+            self._write(f"下载到: {event.download_dir}")
+            if event.dry_run:
+                self._write("[DRY RUN 模式 — 不实际下载]\n")
+            return
+        if isinstance(event, LogEvent):
+            self._write(event.message)
+            return
+        if isinstance(event, CourseProgressStarted):
+            self._course_bar = tqdm(total=event.total, unit="门课", desc="总进度", position=0)
+            return
+        if isinstance(event, CourseProgressTick):
+            if self._course_bar is not None:
+                self._course_bar.update(event.step)
+            return
+        if isinstance(event, FileProgressStarted):
+            label = event.course_name[:28] if len(event.course_name) > 28 else event.course_name
+            self._file_bar = tqdm(
+                total=event.total,
+                unit="个文件",
+                desc=f"  {label}",
+                position=1,
+                leave=False,
+            )
+            return
+        if isinstance(event, FilePostfix):
+            if self._file_bar is not None:
+                self._file_bar.set_postfix_str(event.text)
+            return
+        if isinstance(event, FileProgressTick):
+            if self._file_bar is not None:
+                self._file_bar.update(event.step)
+            return
+        if isinstance(event, FileProgressEnded):
+            if self._file_bar is not None:
+                self._file_bar.close()
+                self._file_bar = None
+            return
+        if isinstance(event, RunFinished):
+            self.close()
+            if event.cancelled:
+                self._write(f"\n已取消，已下载 {event.downloaded} 个文件")
+            else:
+                self._write(f"\n完成！本次共下载 {event.downloaded} 个文件")
 
-def make_file_bar(course_name: str, total: int):
-    label = course_name[:28] if len(course_name) > 28 else course_name
-    if GUI_MODE:
-        return _GuiBar("file", total, label)
-    return tqdm(total=total, unit="个文件", desc=f"  {label}", position=1, leave=False)
+    def _write(self, message: str) -> None:
+        with self._write_lock:
+            tqdm.write(message)
 
-
-def report_empty_course(course_name: str) -> None:
-    """刷新 GUI "当前课" 为这门无文件的课，避免停留在上一门课的名字上。
-
-    CLI (tqdm) 模式无需处理 —— `_log` 已经在终端上打出了 "[课程名] 无文件"。
-    """
-    if not GUI_MODE:
-        return
-    label = course_name[:28] if len(course_name) > 28 else course_name
-    print(f"@@PROGRESS@@\tfile\tstart\t{_safe_field(label)}\t0", flush=True)
-    print(f"@@PROGRESS@@\tfile\tend", flush=True)
+    def close(self) -> None:
+        if self._file_bar is not None:
+            self._file_bar.close()
+            self._file_bar = None
+        if self._course_bar is not None:
+            self._course_bar.close()
+            self._course_bar = None

@@ -8,8 +8,6 @@ Windows 下编辑器常先删后建（保存原子化），fileChanged 会失效
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 from PySide6.QtCore import (
     QFileSystemWatcher,
     Qt,
@@ -34,11 +32,14 @@ from qfluentwidgets import (
 )
 
 from ... import courses_config as cc
+from ...paths import get_app_paths
+from ...stores import migrate_legacy
 from ._content import ContentPage
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-COURSES_JSON = PROJECT_ROOT / "courses.json"
+APP_PATHS = get_app_paths()
+migrate_legacy(APP_PATHS)
+COURSES_JSON = APP_PATHS.courses_file
 
 
 class CoursesPage(ContentPage):
@@ -77,7 +78,7 @@ class CoursesPage(ContentPage):
         card.setTitle("说明")
 
         desc = BodyLabel(
-            "在下方列表里启用 / 禁用单门课程。修改即时保存到 courses.json；"
+            "在下方列表里启用 / 禁用单门课程。修改即时保存到配置目录的 courses.json；"
             "外部编辑该文件后，列表会自动刷新。",
             card,
         )
@@ -272,7 +273,7 @@ class CoursesPage(ContentPage):
 
     # ─── file system watcher ───
     def _install_watchers(self) -> None:
-        paths: list[str] = [str(PROJECT_ROOT)]
+        paths: list[str] = [str(APP_PATHS.base_dir)]
         if COURSES_JSON.exists():
             paths.append(str(COURSES_JSON))
         # 已有的 watchers 清空再加
