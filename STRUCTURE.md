@@ -14,6 +14,7 @@
 | `canvas_cli.py` | CLI 同步入口；调试或单独打包命令行版本时使用 |
 | `canvas_gui_qt.spec` | PyInstaller 打包配置；生成单文件 GUI exe |
 | `pytest.ini` | pytest 配置；指定测试目录与本地包导入路径 |
+| `AGENTS.md` | Agent 项目约定：运行命令、配置路径、代码边界与验证注意事项 |
 | `README.md` | 用户文档 |
 | `STRUCTURE.md` | 项目结构说明 |
 
@@ -21,9 +22,11 @@
 
 | 文件 | 职责 |
 |------|------|
-| `test_config.py` | CLI 课程 ID 参数解析 |
+| `test_bug_fixes.py` | 回归测试：`request_delay=0` 保留、磁盘空间不足错误、遍历失败时清理进度事件 |
+| `test_client.py` | 下载响应校验：拒绝 Canvas 登录页等 HTML 响应写入目标文件 |
+| `test_config.py` | CLI 课程 ID 参数解析与默认 Canvas URL |
 | `test_migration.py` | 旧版 `.env` / `courses.json` / `sync_state.json` 迁移到用户配置目录 |
-| `test_service.py` | `SyncService` 在空课程等场景下的事件与状态输出 |
+| `test_service.py` | `SyncService` 空课程、磁盘空间不足时的状态保存等核心行为 |
 | `test_traversal.py` | Windows 保留名、非法字符等路径清洗规则 |
 
 ## `canvas_dl/` 包
@@ -78,3 +81,4 @@
 | `.legacy_migrated` | 旧版项目根目录配置迁移完成标记 |
 
 运行时文件默认位于 `%APPDATA%\CanvasDownloader`；非 Windows 环境回退到 `~/.canvas-downloader`。
+测试或手动隔离运行时可设置 `CANVAS_DL_CONFIG_DIR` 覆盖配置目录。

@@ -1,12 +1,18 @@
 # ─── 机密 / 本地配置 ───
 .env
+!.env.example
+secrets.json
+AGENTS.md
 
 # ─── 运行时生成文件 ───
 .test_tmp/
+settings.json
 sync_state.json
 sync_state.lock
-sync_state.tmp
 courses.json
+.legacy_migrated
+*.json.tmp
+*.tmp
 
 # ─── 日志 ───
 canvas_dl.log
