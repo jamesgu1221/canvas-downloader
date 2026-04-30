@@ -16,6 +16,7 @@ from canvas_dl.events import (
 from canvas_dl.paths import AppPaths
 from canvas_dl.service import DiskFullError, SyncService
 from canvas_dl.stores import SettingsStore
+from canvas_dl.util import schedule
 
 
 class _Reporter:
@@ -98,3 +99,12 @@ def test_folder_walk_failure_clears_file_progress(monkeypatch, tmp_path: Path) -
     assert any(isinstance(event, FileProgressStarted) and event.total == 0 for event in reporter.events)
     assert any(isinstance(event, FileProgressEnded) for event in reporter.events)
     assert any(isinstance(event, CourseProgressTick) for event in reporter.events)
+
+
+def test_startup_schedule_uses_stable_name_and_logon_trigger() -> None:
+    task_name, script = schedule.register_startup_script()
+
+    assert task_name == "Canvas课件下载 — 开机登录"
+    assert "New-ScheduledTaskTrigger -AtLogOn" in script
+    assert "Register-ScheduledTask" in script
+    assert "-LogonType Interactive" in script

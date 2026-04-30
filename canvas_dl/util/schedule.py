@@ -16,6 +16,7 @@ from pathlib import Path
 from ..paths import runtime_root
 
 TASK_PREFIX = "Canvas课件下载"
+STARTUP_TASK_NAME = f"{TASK_PREFIX} — 开机登录"
 
 
 def _is_frozen() -> bool:
@@ -61,6 +62,10 @@ def task_name(time_str: str) -> str:
     return f"{TASK_PREFIX} — {time_str.replace(':', '-')}"
 
 
+def startup_task_name() -> str:
+    return STARTUP_TASK_NAME
+
+
 def run_ps(script: str) -> tuple[int, str, str]:
     """用 -EncodedCommand 传 PS 脚本，规避命令行引号/中文转义坑。"""
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
@@ -83,7 +88,11 @@ $results = $tasks | ForEach-Object {{
     $i = Get-ScheduledTaskInfo -TaskName $t.TaskName -ErrorAction SilentlyContinue
     $time = $null
     $trg = $t.Triggers | Select-Object -First 1
+    $triggerKind = 'unknown'
+    $triggerClass = if ($trg -and $trg.CimClass) {{ $trg.CimClass.CimClassName }} else {{ '' }}
+    if ($triggerClass -like '*LogonTrigger' -or $triggerClass -like '*BootTrigger') {{ $triggerKind = 'startup' }}
     if ($trg -and $trg.StartBoundary -match 'T(\d{{2}}:\d{{2}})') {{ $time = $Matches[1] }}
+    if ($triggerKind -eq 'unknown' -and $time) {{ $triggerKind = 'daily' }}
     $lastRun = $null; $nextRun = $null
     # "从未运行"的判定统一交给 Python 侧的 lastResult == 0x41303 —— Windows 对
     # 没跑过的任务返回 1899-11-30 或 1999-11-30 的 sentinel，Year 比较没有
@@ -94,6 +103,7 @@ $results = $tasks | ForEach-Object {{
     [PSCustomObject]@{{
         taskName   = $t.TaskName
         time       = $time
+        triggerKind = $triggerKind
         state      = [int]$t.State
         lastRun    = $lastRun
         lastResult = $lastResult
@@ -140,6 +150,24 @@ def register_script(time_str: str) -> tuple[str, str]:
     script = fr"""
 $act = New-ScheduledTaskAction -Execute '{runner}' -Argument '{arguments}' -WorkingDirectory '{work_dir}'
 $trg = New-ScheduledTaskTrigger -Daily -At '{time_str}'
+$set = New-ScheduledTaskSettingsSet {_TASK_SETTINGS_FRAGMENT}
+$prin = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName '{tn_escaped}' -Action $act -Trigger $trg -Settings $set -Principal $prin -Force | Out-Null
+"""
+    return tn, script
+
+
+def register_startup_script() -> tuple[str, str]:
+    """返回 (task_name, ps_script)，用于注册当前用户登录后的同步任务。"""
+    tn = STARTUP_TASK_NAME
+    runner_path, runner_args = _resolve_runner()
+    runner = _ps_escape(str(runner_path))
+    arguments = _ps_escape(runner_args)
+    work_dir = _ps_escape(str(runtime_root()))
+    tn_escaped = _ps_escape(tn)
+    script = fr"""
+$act = New-ScheduledTaskAction -Execute '{runner}' -Argument '{arguments}' -WorkingDirectory '{work_dir}'
+$trg = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 $set = New-ScheduledTaskSettingsSet {_TASK_SETTINGS_FRAGMENT}
 $prin = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName '{tn_escaped}' -Action $act -Trigger $trg -Settings $set -Principal $prin -Force | Out-Null

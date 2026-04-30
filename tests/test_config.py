@@ -21,7 +21,7 @@ def test_parse_course_ids_accepts_numbers():
 def test_default_canvas_url_is_sjtu():
     root = Path(".test_tmp") / f"default_url_{uuid.uuid4().hex}"
     try:
-        paths = AppPaths(base_dir=root / "config", project_root=root / "project")
+        paths = AppPaths(base_dir=root / "config")
 
         assert SettingsStore(paths).load().canvas_url == "https://oc.sjtu.edu.cn"
     finally:

@@ -1,16 +1,17 @@
 # ─── 机密 / 本地配置 ───
 .env
-!.env.example
 secrets.json
 AGENTS.md
 
 # ─── 运行时生成文件 ───
 .test_tmp/
+.pytest_tmp/
+.tmp/
+.tmp2/
 settings.json
 sync_state.json
 sync_state.lock
 courses.json
-.legacy_migrated
 *.json.tmp
 *.tmp
 

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import FluentWindow, MessageBox, NavigationItemPosition
 
-from ._patches import apply_popup_shadow_patch
+from ._font_policy import install_font_policy
 from .pages import (
     CoursesPage,
     HomePage,
@@ -19,6 +19,7 @@ from .pages import (
     SettingsPage,
 )
 from .theme import apply_system_theme, install_theme_listener, is_dark_theme, theme_signal_bus
+from ._window_policy import install_overlay_window_policy
 
 
 class CanvasApp(FluentWindow):
@@ -50,7 +51,7 @@ class CanvasApp(FluentWindow):
         self.settings_page = SettingsPage(self)
 
         self.addSubInterface(self.home_page, FIF.HOME, "主页")
-        self.addSubInterface(self.schedule_page, FIF.DATE_TIME, "定时任务")
+        self.addSubInterface(self.schedule_page, FIF.DATE_TIME, "自动任务")
         self.addSubInterface(self.courses_page, FIF.EDUCATION, "课程管理")
         self.addSubInterface(self.path_page, FIF.FOLDER, "下载路径")
         self.addSubInterface(
@@ -117,7 +118,8 @@ class CanvasApp(FluentWindow):
 def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
 
-    apply_popup_shadow_patch()
+    install_font_policy(app)
+    install_overlay_window_policy(app)
     apply_system_theme()
     install_theme_listener()
 

@@ -9,7 +9,7 @@ import pytest
 from canvas_dl.config import AppConfig
 from canvas_dl.events import FileProgressStarted, RunFinished
 from canvas_dl.paths import AppPaths
-from canvas_dl.service import CancelToken, RunOptions, SyncService
+from canvas_dl.service import CancelToken, DiskFullError, RunOptions, SyncService
 from canvas_dl.state import SyncState
 
 
@@ -84,7 +84,7 @@ class CollectingReporter:
 def test_sync_service_reports_empty_course():
     root = Path(".test_tmp") / f"service_{uuid.uuid4().hex}"
     try:
-        paths = AppPaths(base_dir=root / "config", project_root=root / "project")
+        paths = AppPaths(base_dir=root / "config")
         config = AppConfig(
             api_token="tok",
             canvas_url="https://canvas.example.edu",
@@ -106,7 +106,7 @@ def test_sync_service_reports_empty_course():
 def test_process_course_saves_progress_before_system_exit():
     root = Path(".test_tmp") / f"service_{uuid.uuid4().hex}"
     try:
-        paths = AppPaths(base_dir=root / "config", project_root=root / "project")
+        paths = AppPaths(base_dir=root / "config")
         config = AppConfig(
             api_token="tok",
             canvas_url="https://canvas.example.edu",
@@ -116,7 +116,7 @@ def test_process_course_saves_progress_before_system_exit():
         state = SyncState(paths.state_file)
         state.load()
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(DiskFullError):
             service._process_course(FakeCourse(1, "Files"), state, CollectingReporter(), CancelToken())
 
         state.close()

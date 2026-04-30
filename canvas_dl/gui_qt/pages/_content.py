@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import SingleDirectionScrollArea, TitleLabel
 
 
-_FADE_MS = 260
+_FADE_MS = 360
 _SLIDE_PX = 12
 
 

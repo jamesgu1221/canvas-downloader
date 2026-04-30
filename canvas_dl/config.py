@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .paths import AppPaths, get_app_paths
-from .stores import SecretStore, SettingsStore, migrate_legacy
+from .stores import SecretStore, SettingsStore
 
 
 @dataclass
@@ -34,7 +34,6 @@ def parse_course_ids(ids: list, flag: str) -> list[int]:
 
 def load_config(args=None, paths: AppPaths | None = None) -> AppConfig:
     paths = paths or get_app_paths()
-    migrate_legacy(paths)
 
     settings = SettingsStore(paths).load()
     token = SecretStore(paths).get_api_token()

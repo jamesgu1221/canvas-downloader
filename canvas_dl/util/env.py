@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from ..paths import get_app_paths
-from ..stores import SecretStore, SettingsStore, migrate_legacy
+from ..stores import SecretStore, SettingsStore
 
 
 def _paths():
-    paths = get_app_paths()
-    migrate_legacy(paths)
-    return paths
+    return get_app_paths()
 
 
 def get_download_dir() -> str:

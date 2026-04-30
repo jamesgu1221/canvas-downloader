@@ -9,22 +9,18 @@ from pathlib import Path
 def runtime_root() -> Path:
     """Return the user-visible application root.
 
-    In source runs this is the repository root. In a PyInstaller build, `__file__`
-    points inside the temporary bundle, so files such as legacy `.env` next to
-    the exe must be resolved from `sys.executable` instead.
+    In source runs this is the repository root. In a PyInstaller build,
+    `__file__` points inside the temporary bundle, so runtime helpers that need
+    the exe directory must resolve from `sys.executable` instead.
     """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
-PROJECT_ROOT = runtime_root()
-
-
 @dataclass(frozen=True)
 class AppPaths:
     base_dir: Path
-    project_root: Path = PROJECT_ROOT
 
     @property
     def settings_file(self) -> Path:
@@ -41,10 +37,6 @@ class AppPaths:
     @property
     def state_file(self) -> Path:
         return self.base_dir / "sync_state.json"
-
-    @property
-    def migration_marker(self) -> Path:
-        return self.base_dir / ".legacy_migrated"
 
     @property
     def cli_log_file(self) -> Path:

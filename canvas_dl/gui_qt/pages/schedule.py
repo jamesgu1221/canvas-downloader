@@ -1,4 +1,4 @@
-"""定时任务：基于 Windows Task Scheduler，迁移自旧 Tk GUI。
+"""自动任务：基于 Windows Task Scheduler 的 Qt 页面。
 
 PS 调用是同步的（一次 ~300–500ms 冷启动），必须放到后台线程里跑，
 完成后通过 `_PSBridge` signal 回主线程刷新表格。
@@ -9,9 +9,11 @@ from __future__ import annotations
 import threading
 from typing import Callable
 
-from PySide6.QtCore import QObject, QTime, Qt, Signal
+from PySide6.QtCore import QObject, QTime, Qt, QTimer, Signal
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QDialog,
     QHBoxLayout,
     QHeaderView,
     QTableWidgetItem,
@@ -28,6 +30,7 @@ from qfluentwidgets import (
     MessageBox,
     PrimaryPushButton,
     PushButton,
+    SwitchButton,
     TableWidget,
     TimePicker,
 )
@@ -41,33 +44,71 @@ class _PSBridge(QObject):
 
 
 class SchedulePage(ContentPage):
-    title = "定时任务"
+    title = "自动任务"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(object_name="SchedulePage", parent=parent)
 
         self._bridge = _PSBridge()
         self._bridge.done.connect(self._on_ps_done)
+        self._startup_enabled = False
+        self._startup_desired_enabled = False
+        self._startup_update_running = False
+        self._startup_user_dirty = False
+        self._startup_pin_generation = 0
+        self._refresh_running = False
+        self._refresh_requested = False
+        self._schedule_busy = False
 
-        self.add(self._build_action_card())
-        self.add(self._build_table_card())
+        self.add(self._build_startup_card())
+        self.add(self._build_schedule_card())
         self.add_stretch()
+
+        self._auto_refresh_timer = QTimer(self)
+        self._auto_refresh_timer.setInterval(30_000)
+        self._auto_refresh_timer.timeout.connect(self.refresh)
+        self._auto_refresh_timer.start()
 
         self.refresh()
 
     # ─── UI ───
-    def _build_action_card(self) -> QWidget:
+    def _build_startup_card(self) -> QWidget:
         card = HeaderCardWidget(self)
-        card.setTitle("时间")
+        card.setTitle("开机自动下载")
 
         row = QHBoxLayout()
         row.setSpacing(10)
 
-        self._time_picker = TimePicker(card)
-        self._time_picker.setTime(QTime(22, 0))
-        row.addWidget(self._time_picker)
+        label_wrap = QVBoxLayout()
+        label_wrap.setSpacing(2)
 
-        self._add_btn = PrimaryPushButton(FIF.ADD, "新增", card)
+        title = BodyLabel("Windows 登录后自动运行一次 Canvas 同步", card)
+        desc = CaptionLabel("关闭开关会删除对应的任务计划程序任务。", card)
+        desc.setTextColor("#777", "#aaa")
+        label_wrap.addWidget(title)
+        label_wrap.addWidget(desc)
+
+        self._startup_switch = SwitchButton(card)
+        self._startup_switch.setOnText("")
+        self._startup_switch.setOffText("")
+        self._startup_switch.checkedChanged.connect(self._on_startup_switch_changed)
+
+        row.addLayout(label_wrap, 1)
+        row.addWidget(self._startup_switch, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        container = QWidget(card)
+        container.setLayout(row)
+        card.viewLayout.addWidget(container)
+        return card
+
+    def _build_schedule_card(self) -> QWidget:
+        card = HeaderCardWidget(self)
+        card.setTitle("定时下载")
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+
+        self._add_btn = PrimaryPushButton(FIF.ADD, "新增定时", card)
         self._add_btn.clicked.connect(self._on_add)
         row.addWidget(self._add_btn)
 
@@ -79,14 +120,10 @@ class SchedulePage(ContentPage):
         self._delete_btn.clicked.connect(self._on_delete)
         row.addWidget(self._delete_btn)
 
-        self._refresh_btn = PushButton(FIF.SYNC, "刷新", card)
-        self._refresh_btn.clicked.connect(self.refresh)
-        row.addWidget(self._refresh_btn)
-
         row.addStretch(1)
 
         self._hint = CaptionLabel(
-            "每日固定时间自动运行一次 Canvas 同步；依赖 Windows 任务计划程序。",
+            "可设置多个每日固定时间点自动同步；列表会自动刷新。",
             card,
         )
         self._hint.setTextColor("#777", "#aaa")
@@ -95,15 +132,6 @@ class SchedulePage(ContentPage):
         wrap.setSpacing(6)
         wrap.addLayout(row)
         wrap.addWidget(self._hint)
-
-        container = QWidget(card)
-        container.setLayout(wrap)
-        card.viewLayout.addWidget(container)
-        return card
-
-    def _build_table_card(self) -> QWidget:
-        card = HeaderCardWidget(self)
-        card.setTitle("已注册任务")
 
         self._table = TableWidget(card)
         self._table.setColumnCount(4)
@@ -123,12 +151,10 @@ class SchedulePage(ContentPage):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
 
-        self._empty_label = BodyLabel("（尚未注册任何 Canvas 定时任务）", card)
+        self._empty_label = BodyLabel("（尚未注册任何 Canvas 定时下载任务）", card)
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setTextColor("#888", "#aaa")
 
-        wrap = QVBoxLayout()
-        wrap.setSpacing(6)
         wrap.addWidget(self._table)
         wrap.addWidget(self._empty_label)
 
@@ -139,16 +165,38 @@ class SchedulePage(ContentPage):
 
     # ─── data ───
     def refresh(self) -> None:
-        self._set_busy(True)
+        if self._refresh_running:
+            self._refresh_requested = True
+            return
+        self._refresh_running = True
         self._run_ps(
             "refresh",
             lambda: sched.run_ps(sched._QUERY_ALL_SCRIPT),  # type: ignore[attr-defined]
         )
 
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self.refresh()
+
     def _reload_table(self, tasks: list[dict]) -> None:
-        tasks.sort(key=lambda t: t.get("time") or "99:99")
-        self._table.setRowCount(len(tasks))
-        for row, t in enumerate(tasks):
+        backend_startup_enabled = any(self._is_startup_task(t) for t in tasks)
+        self._startup_enabled = backend_startup_enabled
+        if self._startup_update_running or self._startup_user_dirty:
+            if (
+                backend_startup_enabled == self._startup_desired_enabled
+                and not self._startup_update_running
+            ):
+                self._startup_user_dirty = False
+            elif not self._startup_update_running:
+                self._sync_startup_task()
+        else:
+            self._startup_desired_enabled = backend_startup_enabled
+            self._sync_startup_switch(backend_startup_enabled)
+
+        daily_tasks = [t for t in tasks if not self._is_startup_task(t)]
+        daily_tasks.sort(key=lambda t: t.get("time") or "99:99")
+        self._table.setRowCount(len(daily_tasks))
+        for row, t in enumerate(daily_tasks):
             time_val = t.get("time") or "--:--"
             state_text = sched.STATE_MAP.get(t.get("state", 0), "未知")
             next_run = t.get("nextRun") or "—"
@@ -166,14 +214,56 @@ class SchedulePage(ContentPage):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row, col, item)
 
-        self._empty_label.setVisible(len(tasks) == 0)
-        self._table.setVisible(len(tasks) > 0)
+        self._empty_label.setVisible(len(daily_tasks) == 0)
+        self._table.setVisible(len(daily_tasks) > 0)
         self._on_selection_changed()
 
     # ─── actions ───
-    def _picked_time_str(self) -> str:
-        t: QTime = self._time_picker.getTime()
+    def _format_time(self, t: QTime) -> str:
         return f"{t.hour():02d}:{t.minute():02d}"
+
+    def _prompt_time(self, title: str, initial: QTime | None = None) -> str | None:
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle(title)
+        dialog.setModal(True)
+
+        picker = TimePicker(dialog)
+        picker.setTime(initial or QTime.currentTime())
+
+        ok_btn = PrimaryPushButton("确定", dialog)
+        cancel_btn = PushButton("取消", dialog)
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(14)
+        layout.addWidget(picker)
+        layout.addLayout(btn_row)
+
+        if not dialog.exec():
+            return None
+        return self._format_time(picker.getTime())
+
+    def _selected_time(self) -> QTime | None:
+        row = self._table.currentRow()
+        if row < 0:
+            return None
+        item = self._table.item(row, 0)
+        if item is None:
+            return None
+        text = item.text()
+        if ":" not in text:
+            return None
+        hh, mm = text.split(":", 1)
+        if not (hh.isdigit() and mm.isdigit()):
+            return None
+        return QTime(int(hh), int(mm))
 
     def _existing_times(self, exclude_task_name: str | None = None) -> set[str]:
         times: set[str] = set()
@@ -194,29 +284,46 @@ class SchedulePage(ContentPage):
         item = self._table.item(row, 0)
         return None if item is None else (item.data(Qt.ItemDataRole.UserRole) or None)
 
+    @staticmethod
+    def _is_startup_task(task: dict) -> bool:
+        return (
+            task.get("triggerKind") == "startup"
+            or task.get("taskName") == sched.startup_task_name()
+        )
+
     def _on_add(self) -> None:
-        t = self._picked_time_str()
+        t = self._prompt_time("新增定时下载")
+        if t is None:
+            return
         if t in self._existing_times():
-            self._warn("已存在", f"已存在 {t} 的定时任务。")
+            self._warn("已存在", f"已存在 {t} 的定时下载任务。")
             return
         _, script = sched.register_script(t)
-        self._set_busy(True)
+        self._set_schedule_busy(True)
         self._run_ps("add", lambda: sched.run_ps(script))
+
+    def _on_startup_switch_changed(self, checked: bool) -> None:
+        self._startup_desired_enabled = checked
+        self._startup_user_dirty = self._startup_update_running or checked != self._startup_enabled
+        self._pin_startup_switch(checked)
+        self._sync_startup_task()
 
     def _on_modify(self) -> None:
         old = self._selected_task_name()
         if not old:
             self._warn("未选择", "请先在表格中选择一条要修改的任务。")
             return
-        new_time = self._picked_time_str()
+        new_time = self._prompt_time("修改定时下载", self._selected_time())
+        if new_time is None:
+            return
         if old == sched.task_name(new_time):
             self._info("提示", "时间未变，无需修改。")
             return
         if new_time in self._existing_times(exclude_task_name=old):
-            self._warn("已存在", f"已存在 {new_time} 的定时任务，无法修改。")
+            self._warn("已存在", f"已存在 {new_time} 的定时下载任务，无法修改。")
             return
         script = sched.modify_script(old, new_time)
-        self._set_busy(True)
+        self._set_schedule_busy(True)
         self._run_ps("modify", lambda: sched.run_ps(script))
 
     def _on_delete(self) -> None:
@@ -232,26 +339,21 @@ class SchedulePage(ContentPage):
             -1,
         )
         time_display = self._table.item(row, 0).text() if row >= 0 else ""
-        box = MessageBox("确认删除", f"删除每天 {time_display} 的定时任务？", self.window())
+        box = MessageBox("确认删除", f"删除每天 {time_display} 的定时下载任务？", self.window())
         if not box.exec():
             return
         script = sched.delete_script(task_name)
-        self._set_busy(True)
+        self._set_schedule_busy(True)
         self._run_ps("delete", lambda: sched.run_ps(script))
 
     def _on_selection_changed(self) -> None:
+        if self._schedule_busy:
+            self._modify_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
+            return
         has_sel = self._selected_task_name() is not None
         self._modify_btn.setEnabled(has_sel)
         self._delete_btn.setEnabled(has_sel)
-        # 选中后把时间同步到 TimePicker 方便修改
-        if has_sel:
-            item = self._table.item(self._table.currentRow(), 0)
-            if item is not None:
-                text = item.text()
-                if ":" in text and not text.startswith("-"):
-                    hh, mm = text.split(":", 1)
-                    if hh.isdigit() and mm.isdigit():
-                        self._time_picker.setTime(QTime(int(hh), int(mm)))
 
     # ─── PS worker glue ───
     def _run_ps(self, op: str, fn: Callable[[], tuple[int, str, str]]) -> None:
@@ -265,8 +367,26 @@ class SchedulePage(ContentPage):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_ps_done(self, op: str, rc: int, out: str, err: str) -> None:
-        self._set_busy(False)
+        if op in {"enable_startup", "disable_startup"}:
+            self._startup_update_running = False
+            target_enabled = op == "enable_startup"
+            if rc != 0:
+                self._startup_desired_enabled = self._startup_enabled
+                self._startup_user_dirty = False
+                self._sync_startup_switch(self._startup_enabled)
+                self._error("失败", f"{op} 失败：{err or out or '未知错误'}")
+                return
+            self._startup_enabled = target_enabled
+            if self._startup_desired_enabled != self._startup_enabled:
+                self._startup_user_dirty = True
+                self._sync_startup_task()
+            else:
+                self._startup_user_dirty = False
+            self.refresh()
+            return
+
         if op == "refresh":
+            self._refresh_running = False
             tasks: list[dict] = []
             parse_failed = False
             if rc == 0 and out:
@@ -291,8 +411,12 @@ class SchedulePage(ContentPage):
                 self._error("刷新失败", err or out or "调用 PowerShell 失败")
             elif parse_failed:
                 self._error("刷新失败", "无法解析 PowerShell 返回的任务列表。")
+            if self._refresh_requested:
+                self._refresh_requested = False
+                self.refresh()
             return
 
+        self._set_schedule_busy(False)
         if rc != 0:
             self._error("失败", f"{op} 失败：{err or out or '未知错误'}")
             return
@@ -300,7 +424,11 @@ class SchedulePage(ContentPage):
         # add / modify / delete 成功后一律重新查一次，确保表格与系统一致
         self.refresh()
 
-        labels = {"add": "新增", "modify": "修改", "delete": "删除"}
+        labels = {
+            "add": "新增",
+            "modify": "修改",
+            "delete": "删除",
+        }
         InfoBar.success(
             title=labels.get(op, op),
             content=f"{labels.get(op, op)}成功。",
@@ -311,12 +439,53 @@ class SchedulePage(ContentPage):
         )
 
     # ─── UI state helpers ───
-    def _set_busy(self, busy: bool) -> None:
-        for btn in (self._add_btn, self._modify_btn, self._delete_btn, self._refresh_btn):
-            btn.setEnabled(not busy)
+    def _set_schedule_busy(self, busy: bool) -> None:
+        self._schedule_busy = busy
+        self._add_btn.setEnabled(not busy)
         # 非 busy 时重新算 modify/delete 的可用性
         if not busy:
             self._on_selection_changed()
+        else:
+            self._modify_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
+
+    def _sync_startup_task(self) -> None:
+        if self._startup_update_running:
+            return
+        if self._startup_desired_enabled == self._startup_enabled:
+            self._startup_user_dirty = False
+            self._pin_startup_switch(self._startup_desired_enabled)
+            return
+
+        self._startup_update_running = True
+        if self._startup_desired_enabled:
+            _, script = sched.register_startup_script()
+            op = "enable_startup"
+        else:
+            script = sched.delete_script(sched.startup_task_name())
+            op = "disable_startup"
+        self._run_ps(op, lambda: sched.run_ps(script))
+
+    def _sync_startup_switch(self, checked: bool) -> None:
+        self._startup_switch.blockSignals(True)
+        self._startup_switch.setChecked(checked)
+        self._startup_switch.blockSignals(False)
+
+    def _pin_startup_switch(self, checked: bool) -> None:
+        self._startup_pin_generation += 1
+        generation = self._startup_pin_generation
+        for delay in (0, 60, 140, 260):
+            QTimer.singleShot(
+                delay,
+                lambda value=checked, gen=generation: self._sync_startup_switch_if_current(
+                    value,
+                    gen,
+                ),
+            )
+
+    def _sync_startup_switch_if_current(self, checked: bool, generation: int) -> None:
+        if generation == self._startup_pin_generation:
+            self._sync_startup_switch(checked)
 
     # ─── small UI helpers ───
     def _warn(self, title: str, content: str) -> None:

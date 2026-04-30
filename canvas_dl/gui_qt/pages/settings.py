@@ -100,8 +100,7 @@ class SettingsPage(ContentPage):
         card.setTitle("Canvas 连接")
 
         desc = BodyLabel(
-            f"配置保存在 {env_util.get_config_dir()}。Token 获取方式：登录 Canvas → 账户设置 → "
-            "新建访问令牌。",
+            "Token 获取方式：登录 Canvas → 账户设置 → 新建访问令牌。",
             card,
         )
         desc.setWordWrap(True)

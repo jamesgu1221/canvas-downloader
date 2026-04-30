@@ -1,8 +1,8 @@
 """课程管理：基于 courses.json 的 SwitchButton 列表。
 
-外部变更监听：`QFileSystemWatcher` 替代旧 Tk 版的 2s mtime 轮询。
-Windows 下编辑器常先删后建（保存原子化），fileChanged 会失效，因此同时监听所在
-目录，任何写入都重新 stat → 比对 mtime 后决定是否重新渲染。
+外部变更通过 `QFileSystemWatcher` 监听。Windows 下编辑器常先删后建
+（保存原子化），fileChanged 会失效，因此同时监听所在目录，任何写入都重新
+stat → 比对 mtime 后决定是否重新渲染。
 """
 
 from __future__ import annotations
@@ -33,12 +33,10 @@ from qfluentwidgets import (
 
 from ... import courses_config as cc
 from ...paths import get_app_paths
-from ...stores import migrate_legacy
 from ._content import ContentPage
 
 
 APP_PATHS = get_app_paths()
-migrate_legacy(APP_PATHS)
 COURSES_JSON = APP_PATHS.courses_file
 
 
@@ -166,7 +164,6 @@ class CoursesPage(ContentPage):
 
         name_label = StrongBodyLabel(name, row)
         name_label.setWordWrap(True)
-        name_label.setToolTip(name)
         name_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
