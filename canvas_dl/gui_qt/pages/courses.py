@@ -74,35 +74,18 @@ class CoursesPage(ContentPage):
 
     # ─── UI ───
     def _build_header_card(self) -> QWidget:
-        card = HeaderCardWidget(self)
-        card.setTitle("说明")
+        container = QWidget(self)
+        container.setStyleSheet("background: transparent;")
 
-        desc = BodyLabel(
-            "在下方列表里启用 / 禁用单门课程。修改即时保存到配置目录的 courses.json；"
-            "外部编辑该文件后，列表会自动刷新。",
-            card,
-        )
-        desc.setWordWrap(True)
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 12, 0)
+        row.addStretch(1)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        self._path_label = CaptionLabel(str(COURSES_JSON), card)
-        self._path_label.setTextColor("#777", "#aaa")
-        row.addWidget(self._path_label, 1)
-
-        self._reload_btn = PushButton(FIF.SYNC, "重新加载", card)
+        self._reload_btn = PushButton(FIF.SYNC, "重新加载", container)
         self._reload_btn.clicked.connect(self.load)
         row.addWidget(self._reload_btn)
 
-        wrap = QVBoxLayout()
-        wrap.setSpacing(8)
-        wrap.addWidget(desc)
-        wrap.addLayout(row)
-
-        container = QWidget(card)
-        container.setLayout(wrap)
-        card.viewLayout.addWidget(container)
-        return card
+        return container
 
     def _build_list_card(self) -> QWidget:
         card = HeaderCardWidget(self)

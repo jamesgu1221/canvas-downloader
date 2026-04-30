@@ -9,7 +9,6 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QPlainTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +41,7 @@ from ...events import (
 from ...paths import get_app_paths
 from ...service import CancelToken, RunOptions, SyncError, SyncService
 from ._content import ContentPage
+from ._log_panel import LogLevel, LogPanel
 
 
 class _SyncWorker(QObject):
@@ -156,18 +156,7 @@ class HomePage(ContentPage):
         self._clear_btn.clicked.connect(lambda: self._log.clear())
         bar.addWidget(self._clear_btn)
 
-        self._log = QPlainTextEdit(card)
-        self._log.setReadOnly(True)
-        self._log.setMinimumHeight(180)
-        self._log.setPlaceholderText("点击「立即运行」后，下载日志将显示在这里。")
-        self._log.setStyleSheet(
-            "QPlainTextEdit { "
-            "   background: rgba(255,255,255,0.55); "
-            "   border: 1px solid rgba(0,0,0,0.08); "
-            "   border-radius: 6px; "
-            "   padding: 6px; "
-            "}"
-        )
+        self._log = LogPanel(card)
 
         wrap = QVBoxLayout()
         wrap.setSpacing(0)
@@ -212,10 +201,17 @@ class HomePage(ContentPage):
             self._worker.cancel_token.cancel()
             self._status_label.setText("终止中...")
 
-    def _append_log(self, text: str) -> None:
-        self._log.moveCursor(self._log.textCursor().MoveOperation.End)
-        self._log.insertPlainText(text.rstrip("\n") + "\n")
-        self._log.moveCursor(self._log.textCursor().MoveOperation.End)
+    def _append_log(self, text: str, level: LogLevel = "info") -> None:
+        self._log.append(text, level)
+
+    def _log_level(self, message: str) -> LogLevel:
+        if "错误" in message or "失败" in message or "空间不足" in message:
+            return "error"
+        if "跳过" in message or "不可见" in message:
+            return "warning"
+        if message.startswith("完成") or message.startswith("已取消"):
+            return "success"
+        return "info"
 
     def _handle_event(self, event: SyncEvent) -> None:
         if isinstance(event, RunStarted):
@@ -225,7 +221,7 @@ class HomePage(ContentPage):
                 self._append_log("[DRY RUN 模式 — 不实际下载]")
             return
         if isinstance(event, LogEvent):
-            self._append_log(event.message)
+            self._append_log(event.message, self._log_level(event.message))
             return
         if isinstance(event, CourseProgressStarted):
             total = max(event.total, 1)
@@ -265,9 +261,9 @@ class HomePage(ContentPage):
             return
         if isinstance(event, RunFinished):
             if event.cancelled:
-                self._append_log(f"已取消，已下载 {event.downloaded} 个文件")
+                self._append_log(f"已取消，已下载 {event.downloaded} 个文件", "success")
             else:
-                self._append_log(f"完成！本次共下载 {event.downloaded} 个文件")
+                self._append_log(f"完成！本次共下载 {event.downloaded} 个文件", "success")
 
     def _on_worker_finished(self, rc: int) -> None:
         if self.sender() is not self._worker:
