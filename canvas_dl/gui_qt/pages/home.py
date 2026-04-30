@@ -80,6 +80,8 @@ class HomePage(ContentPage):
         self._current_course_name: str = ""
         self._course_value = 0
         self._file_value = 0
+        self._last_downloaded = 0
+        self._last_cancelled = False
 
         self.add(self._build_action_card())
         self.add(self._build_progress_card())
@@ -180,6 +182,8 @@ class HomePage(ContentPage):
             return
 
         self._reset_progress()
+        self._last_downloaded = 0
+        self._last_cancelled = False
         self._log.clear()
         self._run_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
@@ -197,6 +201,13 @@ class HomePage(ContentPage):
         self._thread.start()
 
     def _on_stop_clicked(self) -> None:
+        if not self.is_running():
+            self._run_btn.setEnabled(True)
+            self._stop_btn.setEnabled(False)
+            self._status_label.setText("未运行")
+            self._worker = None
+            self._thread = None
+            return
         if self._worker is not None:
             self._worker.cancel_token.cancel()
             self._status_label.setText("终止中...")
@@ -260,26 +271,37 @@ class HomePage(ContentPage):
             self._file_postfix.setText("")
             return
         if isinstance(event, RunFinished):
+            self._last_downloaded = event.downloaded
+            self._last_cancelled = event.cancelled
             if event.cancelled:
                 self._append_log(f"已取消，已下载 {event.downloaded} 个文件", "success")
             else:
                 self._append_log(f"完成！本次共下载 {event.downloaded} 个文件", "success")
 
     def _on_worker_finished(self, rc: int) -> None:
-        if self.sender() is not self._worker:
-            return
-
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._status_label.setText(f"完成（退出码 {rc}）" if rc == 0 else f"失败（退出码 {rc}）")
+        if self._last_cancelled:
+            self._status_label.setText("已终止")
+        else:
+            self._status_label.setText("完成" if rc == 0 else f"失败（退出码 {rc}）")
         self._worker = None
         self._thread = None
 
         win = self.window()
-        if rc == 0:
+        if self._last_cancelled:
+            InfoBar.warning(
+                title="已终止",
+                content=f"共下载 {self._last_downloaded} 个文件",
+                orient=Qt.Orientation.Horizontal,
+                position=InfoBarPosition.TOP,
+                parent=win,
+                duration=3000,
+            )
+        elif rc == 0:
             InfoBar.success(
                 title="完成",
-                content="本次 Canvas 同步已完成。",
+                content=f"共下载 {self._last_downloaded} 个文件",
                 orient=Qt.Orientation.Horizontal,
                 position=InfoBarPosition.TOP,
                 parent=win,
@@ -308,7 +330,12 @@ class HomePage(ContentPage):
         self._file_value = 0
 
     def is_running(self) -> bool:
-        return self._thread is not None and self._thread.isRunning()
+        try:
+            return self._thread is not None and self._thread.isRunning()
+        except RuntimeError:
+            self._thread = None
+            self._worker = None
+            return False
 
     def shutdown(self) -> None:
         if self._worker is not None:

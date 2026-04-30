@@ -26,14 +26,13 @@ from qfluentwidgets import (
     PushButton,
     StrongBodyLabel,
     Theme,
-    setTheme,
 )
 from ...util import env as env_util
-from ..theme import apply_system_theme, install_theme_listener, set_follow_system
+from ..theme import apply_system_theme, apply_theme, install_theme_listener, set_follow_system
 from ._content import ContentPage
 
 
-_APP_VERSION = "v1.0.1"
+_APP_VERSION = "v1.0.2"
 _REPO_URL = "https://github.com/jamesgu1221/canvas-downloader"
 
 
@@ -90,10 +89,10 @@ class SettingsPage(ContentPage):
             install_theme_listener()
         elif idx == 1:  # 浅色
             set_follow_system(False)
-            setTheme(Theme.LIGHT)
+            apply_theme(Theme.LIGHT)
         elif idx == 2:  # 深色
             set_follow_system(False)
-            setTheme(Theme.DARK)
+            apply_theme(Theme.DARK)
 
     # ─── Canvas 连接 ───
     def _build_canvas_card(self) -> QWidget:

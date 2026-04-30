@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, CaptionLabel
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import BodyLabel, CaptionLabel, SingleDirectionScrollArea
 
 
 LogLevel = Literal["info", "success", "warning", "error"]
@@ -22,35 +21,31 @@ _LEVEL_COLORS: dict[LogLevel, tuple[str, str]] = {
 
 
 class LogPanel(QWidget):
-    """A compact, scrollable list of sync log entries.
-
-    The previous home page treated logs as a terminal text buffer. This widget
-    keeps display behavior local to the log area and renders each message as a
-    GUI entry instead.
-    """
+    """A compact, scrollable stream of sync log entries."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent=parent)
 
-        self._rows: list[QWidget] = []
+        self._entries: list[QWidget] = []
+        self._last_entry: QWidget | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self._scroll = QScrollArea(self)
+        self._scroll = SingleDirectionScrollArea(self, orient=Qt.Orientation.Vertical)
         self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setFrameShape(SingleDirectionScrollArea.Shape.NoFrame)
         self._scroll.setMinimumHeight(220)
-        self._scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea QWidget { background: transparent; }"
-        )
+        self._scroll.setStyleSheet("background: transparent; border: none;")
+        self._scroll.viewport().setStyleSheet("background: transparent;")
+        self._scroll.verticalScrollBar().rangeChanged.connect(self._on_scroll_range_changed)
 
         self._host = QWidget(self._scroll)
+        self._host.setStyleSheet("background: transparent;")
         self._layout = QVBoxLayout(self._host)
-        self._layout.setContentsMargins(0, 2, 8, 2)
-        self._layout.setSpacing(4)
+        self._layout.setContentsMargins(0, 2, 12, 2)
+        self._layout.setSpacing(2)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._placeholder = CaptionLabel("点击「立即运行」后，下载日志将显示在这里。", self._host)
@@ -71,48 +66,46 @@ class LogPanel(QWidget):
             self._append_line(line, level)
         if lines:
             QTimer.singleShot(0, self._scroll_to_bottom)
+            QTimer.singleShot(25, self._scroll_to_bottom)
 
     def clear(self) -> None:
-        for row in self._rows:
-            self._layout.removeWidget(row)
-            row.deleteLater()
-        self._rows = []
+        for entry in self._entries:
+            self._layout.removeWidget(entry)
+            entry.deleteLater()
+        self._entries = []
+        self._last_entry = None
         self._placeholder.setVisible(True)
 
     def _append_line(self, text: str, level: LogLevel) -> None:
         self._placeholder.setVisible(False)
 
-        row = QWidget(self._host)
-        row.setObjectName("logRow")
-        row.setStyleSheet(
-            "#logRow {"
-            "  background: rgba(127, 127, 127, 0.08);"
-            "  border-radius: 6px;"
-            "}"
-        )
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(10)
+        entry = QWidget(self._host)
+        entry.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(entry)
+        layout.setContentsMargins(0, 3, 0, 3)
+        layout.setSpacing(8)
 
-        time_label = CaptionLabel(datetime.now().strftime("%H:%M:%S"), row)
-        time_label.setTextColor("#888888", "#999999")
-        time_label.setMinimumWidth(58)
-        time_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(time_label)
+        light, dark = _LEVEL_COLORS[level]
 
-        message = BodyLabel(text, row)
+        message = BodyLabel(text, entry)
         message.setWordWrap(True)
         message.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        light, dark = _LEVEL_COLORS[level]
         message.setTextColor(light, dark)
         layout.addWidget(message, 1)
 
         stretch = self._layout.takeAt(self._layout.count() - 1)
-        self._layout.addWidget(row)
+        self._layout.addWidget(entry)
         if stretch is not None:
             self._layout.addItem(stretch)
-        self._rows.append(row)
+        self._entries.append(entry)
+        self._last_entry = entry
 
     def _scroll_to_bottom(self) -> None:
+        self._host.adjustSize()
+        if self._last_entry is not None:
+            self._scroll.ensureWidgetVisible(self._last_entry, 0, 0)
         bar = self._scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
+
+    def _on_scroll_range_changed(self, _minimum: int, maximum: int) -> None:
+        self._scroll.verticalScrollBar().setValue(maximum)

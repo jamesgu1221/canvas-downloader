@@ -78,7 +78,7 @@ class CoursesPage(ContentPage):
         container.setStyleSheet("background: transparent;")
 
         row = QHBoxLayout(container)
-        row.setContentsMargins(0, 0, 12, 0)
+        row.setContentsMargins(0, 0, 2, 0)
         row.addStretch(1)
 
         self._reload_btn = PushButton(FIF.SYNC, "重新加载", container)

@@ -35,6 +35,10 @@ class SyncError(RuntimeError):
     pass
 
 
+class DiskFullError(SyncError):
+    pass
+
+
 @dataclass
 class RunOptions:
     dry_run: bool = False
@@ -188,6 +192,8 @@ class SyncService:
                 root = get_course_root_folder(self.client, course)
             except (ResourceDoesNotExist, requests.exceptions.RequestException) as e:
                 reporter.emit(LogEvent(f"  [{course_name}] 获取文件夹失败（可能是权限不足）：{e}"))
+                reporter.emit(FileProgressStarted(course_name, 0))
+                reporter.emit(FileProgressEnded())
                 reporter.emit(CourseProgressTick())
                 return 0
 
@@ -202,6 +208,8 @@ class SyncService:
                 all_files = list(walk_folder(self.client, root, course_dir))
             except (ResourceDoesNotExist, requests.exceptions.RequestException) as e:
                 reporter.emit(LogEvent(f"  [{course_name}] 遍历文件夹失败：{e}"))
+                reporter.emit(FileProgressStarted(course_name, 0))
+                reporter.emit(FileProgressEnded())
                 reporter.emit(CourseProgressTick())
                 return 0
 
@@ -246,8 +254,9 @@ class SyncService:
                         downloaded += 1
                     except OSError as e:
                         if "No space left" in str(e) or "磁盘空间不足" in str(e):
-                            reporter.emit(LogEvent(f"\n磁盘空间不足，已终止。最后尝试的文件：{local_path}"))
-                            raise SystemExit(1)
+                            raise DiskFullError(
+                                f"磁盘空间不足，已终止。最后尝试的文件：{local_path}"
+                            ) from e
                         reporter.emit(LogEvent(f"  [错误] {display_name}: {e}"))
                         failed += 1
                     except (RuntimeError, requests.exceptions.RequestException) as e:

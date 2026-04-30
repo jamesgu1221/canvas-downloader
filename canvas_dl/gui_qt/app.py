@@ -18,7 +18,7 @@ from .pages import (
     SchedulePage,
     SettingsPage,
 )
-from .theme import apply_system_theme, install_theme_listener
+from .theme import apply_system_theme, install_theme_listener, is_dark_theme, theme_signal_bus
 
 
 class CanvasApp(FluentWindow):
@@ -34,7 +34,9 @@ class CanvasApp(FluentWindow):
         self.setWindowTitle("Canvas 课件下载器")
         self.resize(1100, 720)
         self.setMinimumSize(QSize(860, 560))
-        self.setWindowIcon(self._make_window_icon())
+        self._is_dark_theme = is_dark_theme()
+        theme_signal_bus().theme_applied.connect(self._set_window_icon_for_theme)
+        self._set_window_icon_for_theme(self._is_dark_theme)
 
         self._build_pages()
         self._tune_navigation()
@@ -58,25 +60,29 @@ class CanvasApp(FluentWindow):
             position=NavigationItemPosition.BOTTOM,
         )
 
-    def _make_window_icon(self) -> QIcon:
-        """Create a fixed high-contrast app icon for light title bars."""
+    def _set_window_icon_for_theme(self, is_dark: bool) -> None:
+        self._is_dark_theme = is_dark
+        self.setWindowIcon(self._make_window_icon(is_dark))
+
+    def _make_window_icon(self, is_dark: bool) -> QIcon:
+        """Create a transparent vector-line download icon for the title bar."""
         pixmap = QPixmap(64, 64)
         pixmap.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#0078d4"))
-        painter.drawRoundedRect(6, 6, 52, 52, 12, 12)
 
-        pen = QPen(QColor("#ffffff"), 6)
+        color = QColor("#ffffff" if is_dark else "#111111")
+        pen = QPen(color, 5)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
-        painter.drawLine(32, 17, 32, 38)
-        painter.drawLine(22, 29, 32, 39)
-        painter.drawLine(42, 29, 32, 39)
-        painter.drawLine(21, 47, 43, 47)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        painter.drawLine(32, 13, 32, 38)
+        painter.drawLine(20, 27, 32, 39)
+        painter.drawLine(44, 27, 32, 39)
+        painter.drawLine(18, 49, 46, 49)
         painter.end()
 
         return QIcon(pixmap)

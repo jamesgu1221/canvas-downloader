@@ -19,6 +19,8 @@ from qfluentwidgets import Theme, setTheme
 
 
 _follow_system: bool = True
+_signal_bus: "_ThemeSignalBus | None" = None
+_is_dark_theme: bool = False
 
 
 def set_follow_system(value: bool) -> None:
@@ -30,8 +32,32 @@ def _current_theme() -> Theme:
     return Theme.DARK if darkdetect.isDark() else Theme.LIGHT
 
 
+class _ThemeSignalBus(QObject):
+    """Process-local notification bus for widgets that mirror the app theme."""
+
+    theme_applied = Signal(bool)  # is_dark
+
+
+def theme_signal_bus() -> _ThemeSignalBus:
+    global _signal_bus
+    if _signal_bus is None:
+        _signal_bus = _ThemeSignalBus()
+    return _signal_bus
+
+
+def apply_theme(theme: Theme) -> None:
+    global _is_dark_theme
+    _is_dark_theme = theme == Theme.DARK
+    setTheme(theme)
+    theme_signal_bus().theme_applied.emit(_is_dark_theme)
+
+
 def apply_system_theme() -> None:
-    setTheme(_current_theme())
+    apply_theme(_current_theme())
+
+
+def is_dark_theme() -> bool:
+    return _is_dark_theme
 
 
 class _ThemeBridge(QObject):
@@ -49,7 +75,7 @@ class _ThemeBridge(QObject):
     def _apply(name: str) -> None:
         if not _follow_system:
             return
-        setTheme(Theme.DARK if name == "Dark" else Theme.LIGHT)
+        apply_theme(Theme.DARK if name == "Dark" else Theme.LIGHT)
 
 
 _bridge: _ThemeBridge | None = None

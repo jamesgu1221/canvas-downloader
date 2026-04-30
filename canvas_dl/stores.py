@@ -62,10 +62,13 @@ class SettingsStore:
         if not isinstance(data, dict):
             raise StoreError(f"{self.paths.settings_file} 顶层应为对象")
         merged = {**DEFAULT_SETTINGS, **data}
+        request_delay = merged.get("request_delay")
+        if request_delay is None:
+            request_delay = DEFAULT_SETTINGS["request_delay"]
         return AppSettings(
             canvas_url=str(merged.get("canvas_url") or "").strip().rstrip("/"),
             download_dir=str(merged.get("download_dir") or DEFAULT_DOWNLOAD_DIR).strip(),
-            request_delay=float(merged.get("request_delay") or 0.3),
+            request_delay=float(request_delay),
         )
 
     def save(self, settings: AppSettings) -> None:
