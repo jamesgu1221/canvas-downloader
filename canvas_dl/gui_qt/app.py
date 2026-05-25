@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QCloseEvent, QIcon, QPainter, QPen, QPixmap
@@ -10,13 +11,15 @@ from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import FluentWindow, MessageBox, NavigationItemPosition
 
+from ..paths import get_app_paths
+from ..util import schedule as sched
 from ._font_policy import install_font_policy
 from .pages import (
     CoursesPage,
     HomePage,
-    PathPage,
     SchedulePage,
     SettingsPage,
+    VideosPage,
 )
 from .theme import apply_system_theme, install_theme_listener, is_dark_theme, theme_signal_bus
 from ._window_policy import install_overlay_window_policy
@@ -46,14 +49,14 @@ class CanvasApp(FluentWindow):
     def _build_pages(self) -> None:
         self.home_page = HomePage(self)
         self.schedule_page = SchedulePage(self)
+        self.videos_page = VideosPage(self)
         self.courses_page = CoursesPage(self)
-        self.path_page = PathPage(self)
         self.settings_page = SettingsPage(self)
 
-        self.addSubInterface(self.home_page, FIF.HOME, "主页")
+        self.addSubInterface(self.home_page, FIF.HOME, "课件下载")
         self.addSubInterface(self.schedule_page, FIF.DATE_TIME, "自动任务")
+        self.addSubInterface(self.videos_page, FIF.PLAY, "课堂视频")
         self.addSubInterface(self.courses_page, FIF.EDUCATION, "课程管理")
-        self.addSubInterface(self.path_page, FIF.FOLDER, "下载路径")
         self.addSubInterface(
             self.settings_page,
             FIF.SETTING,
@@ -112,7 +115,34 @@ class CanvasApp(FluentWindow):
                 event.ignore()
                 return
             self.home_page.shutdown()
+        if self.videos_page.is_running():
+            box = MessageBox("确认退出", "视频下载仍在进行，终止并退出吗？", self)
+            if not box.exec():
+                event.ignore()
+                return
+            self.videos_page.shutdown()
         event.accept()
+
+
+def _cleanup_legacy_video_schedules_once() -> None:
+    """老版本注册过 `Canvas视频下载*` 定时任务；新版彻底移除视频调度。
+
+    用 sentinel 文件保证只跑一次；PS 调用放后台线程，不阻塞启动。
+    """
+    paths = get_app_paths()
+    sentinel = paths.base_dir / ".video_schedule_cleaned"
+    if sentinel.exists():
+        return
+
+    def worker() -> None:
+        sched.cleanup_legacy_video_tasks()
+        try:
+            paths.base_dir.mkdir(parents=True, exist_ok=True)
+            sentinel.write_text("ok", encoding="utf-8")
+        except OSError:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def main() -> None:
@@ -122,6 +152,7 @@ def main() -> None:
     install_overlay_window_policy(app)
     apply_system_theme()
     install_theme_listener()
+    _cleanup_legacy_video_schedules_once()
 
     window = CanvasApp()
     window.show()

@@ -1,7 +1,7 @@
 from .home import HomePage
 from .schedule import SchedulePage
 from .courses import CoursesPage
-from .path import PathPage
 from .settings import SettingsPage
+from .videos import VideosPage
 
-__all__ = ["HomePage", "SchedulePage", "CoursesPage", "PathPage", "SettingsPage"]
+__all__ = ["HomePage", "SchedulePage", "CoursesPage", "SettingsPage", "VideosPage"]

@@ -118,6 +118,9 @@ class CanvasClient:
                 for chunk in chunks:
                     f.write(chunk)
 
+        def _replace_part() -> None:
+            os.replace(part, dest)
+
         try:
             needs_token = False
             for attempt in range(3):
@@ -138,7 +141,13 @@ class CanvasClient:
                                     # 此时 part 还未被打开，无需额外清理。
                                     needs_token = True
                                     continue
-                                os.replace(part, dest)
+                                try:
+                                    _replace_part()
+                                except OSError:
+                                    if attempt < 2:
+                                        time.sleep(2 ** attempt)
+                                        continue
+                                    raise
                                 return
                     if needs_token:
                         with self.session.get(
@@ -151,7 +160,13 @@ class CanvasClient:
                             # 带 token 仍返回 HTML → 真正的认证失败或文件被锁；
                             # RuntimeError 在此不可恢复，直接抛出给上层。
                             _write_body(resp)
-                        os.replace(part, dest)
+                        try:
+                            _replace_part()
+                        except OSError:
+                            if attempt < 2:
+                                time.sleep(2 ** attempt)
+                                continue
+                            raise
                         return
                 except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as exc:
                     if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None and exc.response.status_code < 500:

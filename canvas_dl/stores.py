@@ -11,11 +11,27 @@ from .paths import AppPaths, get_app_paths
 
 DEFAULT_CANVAS_URL = "https://oc.sjtu.edu.cn"
 DEFAULT_DOWNLOAD_DIR = r"D:\OneDrive\Desktop\课程材料"
+DEFAULT_VIDEO_MAX_CONCURRENT_VIDEOS = 2
+DEFAULT_VIDEO_MAX_WORKERS_PER_VIDEO = 8
+VIDEO_MAX_CONCURRENT_VIDEOS_RANGE = (1, 4)
+VIDEO_MAX_WORKERS_PER_VIDEO_RANGE = (1, 16)
+
 DEFAULT_SETTINGS = {
     "canvas_url": DEFAULT_CANVAS_URL,
     "download_dir": DEFAULT_DOWNLOAD_DIR,
+    "video_download_dir": "",
     "request_delay": 0.3,
+    "video_max_concurrent_videos": DEFAULT_VIDEO_MAX_CONCURRENT_VIDEOS,
+    "video_max_workers_per_video": DEFAULT_VIDEO_MAX_WORKERS_PER_VIDEO,
 }
+
+
+def _clamp_int(value: Any, lo: int, hi: int, default: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, n))
 
 
 class StoreError(RuntimeError):
@@ -48,7 +64,10 @@ def _save_json(path: Path, data: Any) -> None:
 class AppSettings:
     canvas_url: str = DEFAULT_CANVAS_URL
     download_dir: str = DEFAULT_DOWNLOAD_DIR
+    video_download_dir: str = ""
     request_delay: float = 0.3
+    video_max_concurrent_videos: int = DEFAULT_VIDEO_MAX_CONCURRENT_VIDEOS
+    video_max_workers_per_video: int = DEFAULT_VIDEO_MAX_WORKERS_PER_VIDEO
 
 
 class SettingsStore:
@@ -66,7 +85,18 @@ class SettingsStore:
         return AppSettings(
             canvas_url=str(merged.get("canvas_url") or "").strip().rstrip("/"),
             download_dir=str(merged.get("download_dir") or DEFAULT_DOWNLOAD_DIR).strip(),
+            video_download_dir=str(merged.get("video_download_dir") or "").strip(),
             request_delay=float(request_delay),
+            video_max_concurrent_videos=_clamp_int(
+                merged.get("video_max_concurrent_videos"),
+                *VIDEO_MAX_CONCURRENT_VIDEOS_RANGE,
+                default=DEFAULT_VIDEO_MAX_CONCURRENT_VIDEOS,
+            ),
+            video_max_workers_per_video=_clamp_int(
+                merged.get("video_max_workers_per_video"),
+                *VIDEO_MAX_WORKERS_PER_VIDEO_RANGE,
+                default=DEFAULT_VIDEO_MAX_WORKERS_PER_VIDEO,
+            ),
         )
 
     def save(self, settings: AppSettings) -> None:
@@ -75,7 +105,18 @@ class SettingsStore:
             {
                 "canvas_url": settings.canvas_url.rstrip("/"),
                 "download_dir": settings.download_dir,
+                "video_download_dir": settings.video_download_dir,
                 "request_delay": settings.request_delay,
+                "video_max_concurrent_videos": _clamp_int(
+                    settings.video_max_concurrent_videos,
+                    *VIDEO_MAX_CONCURRENT_VIDEOS_RANGE,
+                    default=DEFAULT_VIDEO_MAX_CONCURRENT_VIDEOS,
+                ),
+                "video_max_workers_per_video": _clamp_int(
+                    settings.video_max_workers_per_video,
+                    *VIDEO_MAX_WORKERS_PER_VIDEO_RANGE,
+                    default=DEFAULT_VIDEO_MAX_WORKERS_PER_VIDEO,
+                ),
             },
         )
 

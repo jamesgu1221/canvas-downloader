@@ -60,6 +60,26 @@ class FileProgressEnded(SyncEvent):
 
 
 @dataclass(frozen=True)
+class VideoBytesStarted(SyncEvent):
+    asset_key: str
+    label: str
+    total_bytes: int
+
+
+@dataclass(frozen=True)
+class VideoBytesProgress(SyncEvent):
+    asset_key: str
+    downloaded: int
+    total: int
+
+
+@dataclass(frozen=True)
+class VideoBytesFinished(SyncEvent):
+    asset_key: str
+    success: bool
+
+
+@dataclass(frozen=True)
 class CourseFinished(SyncEvent):
     course_name: str
     downloaded: int

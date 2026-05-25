@@ -118,7 +118,7 @@ class CoursesPage(ContentPage):
 
         if not COURSES_JSON.exists():
             self._empty_label.setText(
-                "尚未生成 courses.json —— 请先到「主页」点击「立即运行」，首次同步后会自动生成。"
+                "尚未生成 courses.json —— 请先到「课件下载」点击「立即运行」，首次同步后会自动生成。"
             )
             self._empty_label.setVisible(True)
             self._list_host.setVisible(False)

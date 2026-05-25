@@ -1,6 +1,7 @@
 canvasapi>=3.2.0
 requests>=2.31.0
 tqdm>=4.66.0
+browser-cookie3>=0.20.1
 
 # GUI (PySide6 + qfluentwidgets, Win11 Mica)
 PySide6>=6.8.0

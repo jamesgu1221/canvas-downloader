@@ -56,7 +56,7 @@ class SchedulePage(ContentPage):
         self._startup_update_running = False
         self._startup_user_dirty = False
         self._startup_pin_generation = 0
-        self._refresh_running = False
+        self._refresh_pending = 0
         self._refresh_requested = False
         self._schedule_busy = False
 
@@ -165,10 +165,10 @@ class SchedulePage(ContentPage):
 
     # ─── data ───
     def refresh(self) -> None:
-        if self._refresh_running:
+        if self._refresh_pending > 0:
             self._refresh_requested = True
             return
-        self._refresh_running = True
+        self._refresh_pending = 1
         self._run_ps(
             "refresh",
             lambda: sched.run_ps(sched._QUERY_ALL_SCRIPT),  # type: ignore[attr-defined]
@@ -208,7 +208,6 @@ class SchedulePage(ContentPage):
                 QTableWidgetItem(next_run),
                 QTableWidgetItem(last_run),
             ]
-            # 把 taskName 挂在第 0 列的 UserRole 上，后续修改/删除直接用
             items[0].setData(Qt.ItemDataRole.UserRole, t.get("taskName", ""))
             for col, item in enumerate(items):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -386,7 +385,6 @@ class SchedulePage(ContentPage):
             return
 
         if op == "refresh":
-            self._refresh_running = False
             tasks: list[dict] = []
             parse_failed = False
             if rc == 0 and out:
@@ -406,22 +404,23 @@ class SchedulePage(ContentPage):
                     parse_failed = True
             self._reload_table(tasks)
             if rc != 0:
-                # PowerShell 调用失败：权限不足、execution policy 阻挡等；用户需要知道，
-                # 而不是看到一张假装"空"的任务表。
                 self._error("刷新失败", err or out or "调用 PowerShell 失败")
             elif parse_failed:
                 self._error("刷新失败", "无法解析 PowerShell 返回的任务列表。")
-            if self._refresh_requested:
-                self._refresh_requested = False
-                self.refresh()
+            self._refresh_pending -= 1
+            if self._refresh_pending <= 0:
+                self._refresh_pending = 0
+                if self._refresh_requested:
+                    self._refresh_requested = False
+                    self.refresh()
             return
 
+        # Course file schedule ops
         self._set_schedule_busy(False)
         if rc != 0:
             self._error("失败", f"{op} 失败：{err or out or '未知错误'}")
             return
 
-        # add / modify / delete 成功后一律重新查一次，确保表格与系统一致
         self.refresh()
 
         labels = {

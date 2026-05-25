@@ -46,6 +46,18 @@ class AppPaths:
     def gui_log_file(self) -> Path:
         return self.base_dir / "canvas_gui_qt.log"
 
+    @property
+    def video_cookies_file(self) -> Path:
+        return self.base_dir / "video_cookies.dat"
+
+    @property
+    def video_auto_courses_file(self) -> Path:
+        return self.base_dir / "video_auto_courses.json"
+
+    @property
+    def video_lectures_cache_file(self) -> Path:
+        return self.base_dir / "video_lectures_cache.json"
+
 
 def default_config_dir() -> Path:
     override = os.getenv("CANVAS_DL_CONFIG_DIR")

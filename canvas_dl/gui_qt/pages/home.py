@@ -1,4 +1,4 @@
-"""主页：立即运行 + 两级进度条 + 日志。
+"""课件下载：立即运行 + 两级进度条 + 日志。
 
 GUI 不再启动 CLI 子进程，而是在后台 QThread 中直接调用 SyncService；
 核心层通过 SyncEvent 回传进度和日志。
@@ -70,7 +70,7 @@ class _SyncWorker(QObject):
 
 
 class HomePage(ContentPage):
-    title = "主页"
+    title = "课件下载"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(object_name="HomePage", parent=parent)
@@ -253,7 +253,7 @@ class HomePage(ContentPage):
             self._file_value = 0
             self._file_bar.setRange(0, total)
             self._file_bar.setValue(0)
-            self._file_label.setText(f"当前课  0 / {event.total} 文件 — {event.course_name}")
+            self._file_label.setText(f"当前课  0 / {total} 文件 — {event.course_name}")
             self._file_postfix.setText("")
             return
         if isinstance(event, FileProgressTick):

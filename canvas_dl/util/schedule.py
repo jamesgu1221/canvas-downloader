@@ -18,6 +18,8 @@ from ..paths import runtime_root
 TASK_PREFIX = "Canvas课件下载"
 STARTUP_TASK_NAME = f"{TASK_PREFIX} — 开机登录"
 
+LEGACY_VIDEO_TASK_PREFIX = "Canvas视频下载"
+
 
 def _is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
@@ -213,3 +215,24 @@ def format_last_run(entry: dict) -> str:
     if rc_code != 0:
         return f"{last_run} (失败 0x{rc_code:X})"
     return last_run
+
+
+_CLEANUP_LEGACY_VIDEO_SCRIPT = fr"""
+$ErrorActionPreference = 'SilentlyContinue'
+$tasks = @(Get-ScheduledTask | Where-Object {{ $_.TaskName -like '{LEGACY_VIDEO_TASK_PREFIX}*' }})
+foreach ($t in $tasks) {{
+    Unregister-ScheduledTask -TaskName $t.TaskName -Confirm:$false
+}}
+"""
+
+
+def cleanup_legacy_video_tasks() -> None:
+    """老版本注册过 `Canvas视频下载*` 任务；新版彻底移除视频调度。
+
+    GUI 启动时调用一次（外层用 sentinel 文件确保只跑一次）。失败静默 —
+    多数用户根本没注册过视频任务。
+    """
+    try:
+        run_ps(_CLEANUP_LEGACY_VIDEO_SCRIPT)
+    except OSError:
+        pass

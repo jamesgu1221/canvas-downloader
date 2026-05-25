@@ -21,6 +21,39 @@ def set_download_dir(path: str) -> None:
     SettingsStore(paths).save(settings)
 
 
+def get_video_download_dir() -> str:
+    return SettingsStore(_paths()).load().video_download_dir
+
+
+def set_video_download_dir(path: str) -> None:
+    paths = _paths()
+    settings = SettingsStore(paths).load()
+    settings.video_download_dir = path
+    SettingsStore(paths).save(settings)
+
+
+def get_video_max_concurrent_videos() -> int:
+    return SettingsStore(_paths()).load().video_max_concurrent_videos
+
+
+def set_video_max_concurrent_videos(value: int) -> None:
+    paths = _paths()
+    settings = SettingsStore(paths).load()
+    settings.video_max_concurrent_videos = int(value)
+    SettingsStore(paths).save(settings)
+
+
+def get_video_max_workers_per_video() -> int:
+    return SettingsStore(_paths()).load().video_max_workers_per_video
+
+
+def set_video_max_workers_per_video(value: int) -> None:
+    paths = _paths()
+    settings = SettingsStore(paths).load()
+    settings.video_max_workers_per_video = int(value)
+    SettingsStore(paths).save(settings)
+
+
 def get_api_token() -> str:
     return SecretStore(_paths()).get_api_token()
 

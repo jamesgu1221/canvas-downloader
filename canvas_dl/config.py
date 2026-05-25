@@ -32,7 +32,7 @@ def parse_course_ids(ids: list, flag: str) -> list[int]:
     return result
 
 
-def load_config(args=None, paths: AppPaths | None = None) -> AppConfig:
+def load_config(args=None, paths: AppPaths | None = None, require_token: bool = True) -> AppConfig:
     paths = paths or get_app_paths()
 
     settings = SettingsStore(paths).load()
@@ -48,7 +48,7 @@ def load_config(args=None, paths: AppPaths | None = None) -> AppConfig:
         if getattr(args, "dir", None):
             download_dir = args.dir
 
-    if not token:
+    if require_token and not token:
         raise ConfigError(
             "错误：未找到 CANVAS_API_TOKEN。\n"
             "请在 GUI 设置页保存 Token，或在新配置目录的 secrets.json 中填写。\n\n"
