@@ -10,7 +10,6 @@ import base64
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..paths import runtime_root
@@ -191,15 +190,6 @@ Unregister-ScheduledTask -TaskName '{old_tn}' -Confirm:$false
 def delete_script(task_name: str) -> str:
     tn = _ps_escape(task_name)
     return f"Unregister-ScheduledTask -TaskName '{tn}' -Confirm:$false"
-
-
-def compute_next_run(time_str: str, now: datetime | None = None) -> str:
-    now = now or datetime.now()
-    hh, mm = map(int, time_str.split(":"))
-    next_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-    if next_dt <= now:
-        next_dt += timedelta(days=1)
-    return next_dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def format_last_run(entry: dict) -> str:

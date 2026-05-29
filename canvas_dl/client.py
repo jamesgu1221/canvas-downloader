@@ -1,5 +1,6 @@
-import time
 import os
+import time
+from contextlib import suppress
 import requests
 from pathlib import Path
 from urllib.parse import urlparse
@@ -176,5 +177,5 @@ class CanvasClient:
                         continue
                     raise
         finally:
-            if part.exists():
-                part.unlink()
+            with suppress(OSError):
+                part.unlink(missing_ok=True)

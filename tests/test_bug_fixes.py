@@ -78,6 +78,30 @@ def test_settings_store_preserves_zero_request_delay(tmp_path: Path) -> None:
     assert settings.request_delay == 0
 
 
+def test_settings_store_clamps_negative_request_delay(tmp_path: Path) -> None:
+    paths = AppPaths(tmp_path)
+    paths.settings_file.write_text(
+        json.dumps({"request_delay": -1}),
+        encoding="utf-8",
+    )
+
+    settings = SettingsStore(paths).load()
+
+    assert settings.request_delay == 0.0
+
+
+def test_settings_store_defaults_invalid_request_delay(tmp_path: Path) -> None:
+    paths = AppPaths(tmp_path)
+    paths.settings_file.write_text(
+        json.dumps({"request_delay": "invalid"}),
+        encoding="utf-8",
+    )
+
+    settings = SettingsStore(paths).load()
+
+    assert settings.request_delay == 0.3
+
+
 def test_video_subcommand_preserves_global_args_before_command(monkeypatch) -> None:
     monkeypatch.setattr(
         "sys.argv",
@@ -156,6 +180,41 @@ def test_canvas_download_retries_replace_failure(monkeypatch, tmp_path: Path) ->
     assert dest.read_bytes() == b"ok"
     assert session.calls == 2
     assert replace_calls["count"] == 2
+
+
+def test_canvas_download_cleanup_error_does_not_mask_download_error(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    class _FailingSession:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get(self, *args, **kwargs):
+            self.calls += 1
+            raise requests.exceptions.ConnectionError("network down")
+
+    session = _FailingSession()
+    client = CanvasClient.__new__(CanvasClient)
+    client.config = SimpleNamespace(api_token="token")
+    client.session = session
+    client._canvas_origin = ("https", "oc.sjtu.edu.cn")
+    dest = tmp_path / "file.bin"
+    part = dest.with_suffix(dest.suffix + ".part")
+    real_unlink = Path.unlink
+
+    def _locked_unlink(self, *args, **kwargs):
+        if self == part:
+            raise PermissionError("locked")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr("canvas_dl.client.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(Path, "unlink", _locked_unlink)
+
+    with pytest.raises(requests.exceptions.ConnectionError, match="network down"):
+        client.download_file("https://oc.sjtu.edu.cn/files/1/download", dest)
+
+    assert session.calls == 3
 
 
 def test_disk_full_raises_sync_error_without_extra_log(monkeypatch, tmp_path: Path) -> None:

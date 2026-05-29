@@ -7,6 +7,7 @@ PS 调用是同步的（一次 ~300–500ms 冷启动），必须放到后台线
 from __future__ import annotations
 
 import threading
+import weakref
 from typing import Callable
 
 from PySide6.QtCore import QObject, QTime, Qt, QTimer, Signal
@@ -34,6 +35,7 @@ from qfluentwidgets import (
     TableWidget,
     TimePicker,
 )
+from shiboken6 import isValid
 
 from ...util import schedule as sched
 from ._content import ContentPage
@@ -473,12 +475,14 @@ class SchedulePage(ContentPage):
     def _pin_startup_switch(self, checked: bool) -> None:
         self._startup_pin_generation += 1
         generation = self._startup_pin_generation
+        page_ref = weakref.ref(self)
         for delay in (0, 60, 140, 260):
             QTimer.singleShot(
                 delay,
-                lambda value=checked, gen=generation: self._sync_startup_switch_if_current(
-                    value,
-                    gen,
+                lambda value=checked, gen=generation, ref=page_ref: (
+                    page._sync_startup_switch_if_current(value, gen)
+                    if (page := ref()) is not None and isValid(page)
+                    else None
                 ),
             )
 

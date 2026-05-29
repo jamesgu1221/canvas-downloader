@@ -18,6 +18,13 @@ _WINDOWS_RESERVED = frozenset({
     *(f"COM{i}" for i in range(10)),
     *(f"LPT{i}" for i in range(10)),
 })
+_ROOT_FOLDER_NAMES = frozenset({
+    "course files",
+    "课程文件",
+    "fichiers",
+    "kursdateien",
+    "コースファイル",
+})
 
 
 def sanitize_name(name: str, max_len: int = 150) -> str:
@@ -59,23 +66,44 @@ def get_course_root_folder(client, course):
 
     判断逻辑（优先级从高到低）：
     1. parent_folder_id is None 的文件夹集合 → 取 id 最小者（多根时确定性兜底）
-    2. full_name 大小写不敏感匹配 "course files"（本地化 Canvas 可能显示为"课程文件"等）
-    3. 以上均无匹配 → 取 id 最小的文件夹
+    2. parent_folder_id 不在当前 folder id 集合内的文件夹 → 取 id 最小者
+    3. full_name/name 大小写不敏感匹配已知 Canvas 根目录名
+    4. 以上均无匹配 → 取 id 最小的文件夹
     """
     folders = client.get_course_folders(course)
     if not folders:
         return None
 
     # #4 fix: 优先取 parent_folder_id is None 的集合，多个时按 id 最小确保确定性
-    no_parent = [f for f in folders if getattr(f, "parent_folder_id", None) is None]
+    no_parent = [
+        f
+        for f in folders
+        if hasattr(f, "parent_folder_id") and getattr(f, "parent_folder_id", None) is None
+    ]
     if no_parent:
         return min(no_parent, key=lambda f: f.id)
 
-    # 次选：full_name 匹配（兼容本地化名称，如"课程文件"）
-    ROOT_NAMES = {"course files", "课程文件"}
+    folder_ids = {
+        str(folder_id)
+        for folder_id in (getattr(f, "id", None) for f in folders)
+        if folder_id is not None
+    }
+    external_parent = [
+        f
+        for f in folders
+        if (parent_id := getattr(f, "parent_folder_id", None)) is not None
+        and str(parent_id) not in folder_ids
+    ]
+    if external_parent:
+        return min(external_parent, key=lambda f: f.id)
+
+    # 次选：名称匹配（兼容本地化名称，如"课程文件"）
     for f in folders:
-        full_name = (getattr(f, "full_name", "") or "").lower()
-        if full_name in ROOT_NAMES:
+        names = (
+            (getattr(f, "full_name", "") or "").strip().casefold(),
+            (getattr(f, "name", "") or "").strip().casefold(),
+        )
+        if any(name in _ROOT_FOLDER_NAMES for name in names):
             return f
 
     # Fallback: smallest id is usually root

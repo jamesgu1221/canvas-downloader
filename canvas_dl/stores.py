@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,16 @@ def _clamp_int(value: Any, lo: int, hi: int, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(lo, min(hi, n))
+
+
+def _clamp_nonnegative_float(value: Any, default: float) -> float:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(n):
+        return default
+    return max(0.0, n)
 
 
 class StoreError(RuntimeError):
@@ -86,7 +97,10 @@ class SettingsStore:
             canvas_url=str(merged.get("canvas_url") or "").strip().rstrip("/"),
             download_dir=str(merged.get("download_dir") or DEFAULT_DOWNLOAD_DIR).strip(),
             video_download_dir=str(merged.get("video_download_dir") or "").strip(),
-            request_delay=float(request_delay),
+            request_delay=_clamp_nonnegative_float(
+                request_delay,
+                DEFAULT_SETTINGS["request_delay"],
+            ),
             video_max_concurrent_videos=_clamp_int(
                 merged.get("video_max_concurrent_videos"),
                 *VIDEO_MAX_CONCURRENT_VIDEOS_RANGE,
@@ -106,7 +120,10 @@ class SettingsStore:
                 "canvas_url": settings.canvas_url.rstrip("/"),
                 "download_dir": settings.download_dir,
                 "video_download_dir": settings.video_download_dir,
-                "request_delay": settings.request_delay,
+                "request_delay": _clamp_nonnegative_float(
+                    settings.request_delay,
+                    DEFAULT_SETTINGS["request_delay"],
+                ),
                 "video_max_concurrent_videos": _clamp_int(
                     settings.video_max_concurrent_videos,
                     *VIDEO_MAX_CONCURRENT_VIDEOS_RANGE,

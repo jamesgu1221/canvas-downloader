@@ -12,6 +12,7 @@ from canvas_dl.videos import (
     SjtuiVsProvider,
     VideoAsset,
     VideoEntry,
+    VideoError,
     VideoLinkDiscovery,
     VideoLecture,
     VideoRunOptions,
@@ -21,6 +22,7 @@ from canvas_dl.videos import (
     extract_sjtu_video_links,
     parse_lecture_filter,
     parse_sjtu_token,
+    _asset_path,
 )
 from canvas_dl.browser_cookies import _domains_for_urls
 
@@ -495,6 +497,37 @@ def test_download_hls_parallel(tmp_path: Path) -> None:
     seg_gets = [u for u in session.urls if u.endswith(".ts")]
     assert sorted(seg_gets) == sorted(segments.keys())
     assert not list(tmp_path.glob("*.segs"))
+
+
+def test_download_hls_rejects_lowercase_key_tag() -> None:
+    from canvas_dl.videos import VideoDownloader
+
+    downloader = VideoDownloader(session=object(), retry_base_delay=0)
+    playlist = (
+        "#EXTM3U\n"
+        "#ext-x-key:METHOD=AES-128,URI=\"key.bin\"\n"
+        "#EXTINF:5.0,\nseg0.ts\n"
+    )
+
+    with pytest.raises(VideoError, match="加密 m3u8"):
+        downloader._parse_hls_segments("https://v.sjtu.edu.cn/hls/main.m3u8", playlist)
+
+
+def test_asset_path_resolves_many_collisions_with_finite_search(tmp_path: Path) -> None:
+    lecture = VideoLecture(index=1, title="Intro", lecture_id="l1")
+    asset = VideoAsset(
+        kind="课堂",
+        title="课堂",
+        url="https://v.sjtu.edu.cn/media/class.mp4",
+        asset_id="class",
+    )
+    used_paths = {tmp_path / "1-Intro-课堂.mp4"}
+    used_paths.update(tmp_path / f"1-Intro-课堂_{i}.mp4" for i in range(2, 25))
+
+    path = _asset_path(tmp_path, lecture, asset, used_paths)
+
+    assert path.name == "1-Intro-课堂_25.mp4"
+    assert path in used_paths
 
 
 def test_download_progress_reports_bytes_and_total(tmp_path: Path) -> None:

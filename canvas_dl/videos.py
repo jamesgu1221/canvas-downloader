@@ -1105,7 +1105,7 @@ class VideoDownloader:
             return resp.text
 
     def _parse_hls_segments(self, playlist_url: str, playlist: str) -> list[str]:
-        if "#EXT-X-KEY" in playlist:
+        if "#EXT-X-KEY" in playlist.upper():
             raise VideoError("视频下载失败：暂不支持加密 m3u8。")
         lines = [line.strip() for line in playlist.splitlines() if line.strip()]
         nested = [line for line in lines if not line.startswith("#") and line.endswith(".m3u8")]
@@ -1795,13 +1795,12 @@ def _asset_path(
     if candidate not in used_paths:
         used_paths.add(candidate)
         return candidate
-    index = 2
-    while True:
+    for index in range(2, len(used_paths) + 3):
         candidate = course_dir / f"{stem}_{index}{suffix}"
         if candidate not in used_paths:
             used_paths.add(candidate)
             return candidate
-        index += 1
+    raise VideoError("视频下载失败：无法为视频文件生成唯一文件名。")
 
 
 def _state_key(course_id: int, lecture: VideoLecture, asset: VideoAsset) -> str:
