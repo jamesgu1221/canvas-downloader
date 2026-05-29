@@ -24,12 +24,12 @@
 
 | 文件 | 职责 |
 |------|------|
-| `test_bug_fixes.py` | 回归测试：零值配置保留、视频子命令参数透传、cookie 缓存父目录创建、磁盘空间不足错误处理、遍历失败时清理进度事件、开机登录任务计划稳定性 |
+| `test_bug_fixes.py` | 回归测试：配置边界值、视频子命令参数透传、cookie 缓存父目录创建、Canvas 下载临时文件清理、磁盘空间不足错误处理、遍历失败时清理进度事件、开机登录任务计划稳定性 |
 | `test_client.py` | 下载响应校验：拒绝 Canvas 登录页等 HTML 响应写入目标文件 |
 | `test_config.py` | CLI 课程 ID 参数解析与默认 Canvas URL |
 | `test_service.py` | `SyncService` 空课程、磁盘空间不足时的状态保存等核心行为 |
-| `test_traversal.py` | Windows 保留名、非法字符等路径清洗规则 |
-| `test_videos.py` | 课堂视频：节次解析、Canvas external tool 发现、jAccount QR 辅助、SJTU provider、视频状态与 dry-run |
+| `test_traversal.py` | Windows 保留名、非法字符等路径清洗规则、Canvas 根文件夹选择兜底 |
+| `test_videos.py` | 课堂视频：节次解析、Canvas external tool 发现、jAccount QR 辅助、SJTU provider、HLS/并发下载、视频状态与 dry-run |
 
 ## `canvas_dl/` 包
 
@@ -66,7 +66,7 @@
 | `pages/schedule.py` | 自动任务：Windows Task Scheduler 增删改 |
 | `pages/courses.py` | 课程管理：SwitchButton 列表 + 文件变更监听 |
 | `pages/settings.py` | 设置：下载路径、视频下载设置（课堂视频目录 + K/N 并发）、主题切换、Canvas 连接（URL/Token 修改弹窗）、关于 |
-| `pages/videos.py` | 课堂视频：扫码登录后急切扫描全部可下载课程的节次和下载 URL；二次进入直接读缓存渲染课程/节次树，按节次正向勾选 → 预览/下载。每门课展开后内置「按节次范围批量勾选」工具栏（`_CourseBatchControls` 通过 `setItemWidget` 挂在 placeholder 子项上）；顶部 [全部展开 / 全部收起]；勾选框使用 `_AnimatedCheckTreeDelegate` 叠加强调色高亮动画 |
+| `pages/videos.py` | 课堂视频：扫码登录后急切扫描全部可下载课程的节次和下载 URL；二次进入直接读缓存渲染课程/节次树，课程行显示总节数和已选节数（不显示课程 ID），按节次正向勾选 → 预览/下载。每门课展开后内置「按节次范围批量勾选」工具栏（`_CourseBatchControls` 通过 `setItemWidget` 挂在 placeholder 子项上，输入框/应用在左，全选/全清在右）；顶部 [全部展开 / 全部收起]；勾选框使用 `_AnimatedCheckTreeDelegate` 叠加强调色高亮动画 |
 
 ## `canvas_dl/util/` — gui_qt 使用的辅助模块
 

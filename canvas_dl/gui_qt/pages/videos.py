@@ -394,7 +394,7 @@ class _DownloadWorker(QObject):
 
 
 class _CourseBatchControls(QWidget):
-    """Per-course inline toolbar: range input + 应用 / 反选 / 全清 buttons.
+    """Per-course inline toolbar: range input + 应用 / 全选 / 全清 buttons.
 
     Hosted via `QTreeWidget.setItemWidget` on a non-checkable placeholder child
     so each course exposes its own batch-select controls right above its
@@ -402,7 +402,7 @@ class _CourseBatchControls(QWidget):
     """
 
     apply_requested = Signal(int, str)   # course_id, range text
-    invert_requested = Signal(int)       # course_id
+    select_all_requested = Signal(int)   # course_id
     clear_requested = Signal(int)        # course_id
 
     # qfluentwidgets LineEdit has a QSS-enforced min-height of 33px; setting
@@ -429,11 +429,14 @@ class _CourseBatchControls(QWidget):
         self._apply_btn.setFixedHeight(self._ROW_HEIGHT)
         self._apply_btn.clicked.connect(self._emit_apply)
         layout.addWidget(self._apply_btn)
+        layout.addStretch(1)
 
-        self._invert_btn = PushButton("反选", self)
-        self._invert_btn.setFixedHeight(self._ROW_HEIGHT)
-        self._invert_btn.clicked.connect(lambda: self.invert_requested.emit(self._course_id))
-        layout.addWidget(self._invert_btn)
+        self._select_all_btn = PushButton("全选", self)
+        self._select_all_btn.setFixedHeight(self._ROW_HEIGHT)
+        self._select_all_btn.clicked.connect(
+            lambda: self.select_all_requested.emit(self._course_id)
+        )
+        layout.addWidget(self._select_all_btn)
 
         self._clear_btn = PushButton("全清", self)
         self._clear_btn.setFixedHeight(self._ROW_HEIGHT)
@@ -764,7 +767,8 @@ class VideosPage(ContentPage):
             for course in self._courses:
                 course_id = course["id"]
                 lectures = self._lectures_by_course.get(course_id, [])
-                top = QTreeWidgetItem([f"{course['name']} [{course_id}]  ·  共 {len(lectures)} 节"])
+                selected = self._selection.get(course_id, set())
+                top = QTreeWidgetItem([self._course_title(course, lectures, selected)])
                 top.setData(0, Qt.ItemDataRole.UserRole, ("course", course_id))
                 top.setFlags(
                     Qt.ItemFlag.ItemIsEnabled
@@ -773,7 +777,6 @@ class VideosPage(ContentPage):
                 )
                 top.setCheckState(0, Qt.CheckState.Unchecked)
                 self._tree.addTopLevelItem(top)
-                selected = self._selection.get(course_id, set())
                 if lectures:
                     placeholder = QTreeWidgetItem()
                     placeholder.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -802,7 +805,7 @@ class VideosPage(ContentPage):
                 if lectures:
                     controls = _CourseBatchControls(course_id, parent=self._tree)
                     controls.apply_requested.connect(self._on_course_batch_apply)
-                    controls.invert_requested.connect(self._on_course_batch_invert)
+                    controls.select_all_requested.connect(self._on_course_batch_select_all)
                     controls.clear_requested.connect(self._on_course_batch_clear)
                     # placeholder is the first child after we added it above.
                     self._tree.setItemWidget(top.child(0), 0, controls)
@@ -812,6 +815,39 @@ class VideosPage(ContentPage):
                 delegate.suspend(False)
         # Re-sync selection from tree state (in case auto-tristate adjusted parents).
         self._sync_selection_from_tree()
+
+    def _course_title(self, course: dict, lectures: list[dict], selected: set[int]) -> str:
+        lecture_indices = {
+            index
+            for lec in lectures
+            if (index := self._safe_int(lec.get("index"))) is not None
+        }
+        selected_count = len(lecture_indices & selected)
+        return f"{course['name']}  ·  共 {len(lectures)} 节  ·  已选 {selected_count} 节"
+
+    def _refresh_course_titles(self) -> None:
+        courses_by_id = {course["id"]: course for course in self._courses}
+        previous = self._tree.blockSignals(True)
+        try:
+            for i in range(self._tree.topLevelItemCount()):
+                top = self._tree.topLevelItem(i)
+                tag = top.data(0, Qt.ItemDataRole.UserRole)
+                if not (isinstance(tag, tuple) and tag and tag[0] == "course"):
+                    continue
+                course_id = tag[1]
+                course = courses_by_id.get(course_id)
+                if course is None:
+                    continue
+                lectures = self._lectures_by_course.get(course_id, [])
+                title = self._course_title(
+                    course,
+                    lectures,
+                    self._selection.get(course_id, set()),
+                )
+                if top.text(0) != title:
+                    top.setText(0, title)
+        finally:
+            self._tree.blockSignals(previous)
 
     def _on_tree_item_changed(self, _item: QTreeWidgetItem, _column: int) -> None:
         self._sync_selection_from_tree()
@@ -838,6 +874,7 @@ class VideosPage(ContentPage):
                     picked.add(child_tag[2])
             new_selection[course_id] = picked
         self._selection = new_selection
+        self._refresh_course_titles()
 
     # ─── per-course batch selection ───
     def _on_course_batch_apply(self, course_id: int, text: str) -> None:
@@ -856,8 +893,8 @@ class VideosPage(ContentPage):
     def _on_course_batch_clear(self, course_id: int) -> None:
         self._apply_course_leaf_predicate(course_id, lambda _idx: False)
 
-    def _on_course_batch_invert(self, course_id: int) -> None:
-        self._apply_course_leaf_predicate(course_id, None)  # None = toggle
+    def _on_course_batch_select_all(self, course_id: int) -> None:
+        self._apply_course_leaf_predicate(course_id, lambda _idx: True)
 
     def _find_course_item(self, course_id: int) -> QTreeWidgetItem | None:
         for i in range(self._tree.topLevelItemCount()):
